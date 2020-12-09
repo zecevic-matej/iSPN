@@ -5,7 +5,8 @@ __pycache__/
 .DS_Store
 # C extensions
 *.so
-
+*checkpoint*
+*result*
 # Distribution / packaging
 .Python
 build/

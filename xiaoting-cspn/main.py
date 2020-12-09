@@ -95,8 +95,8 @@ class CspnTrainer:
 
         self.saver = tf.train.Saver()
         if os.path.exists(conf.ckpt_dir):
-            self.saver.restore(self.sess, conf.ckpt_dir)
-            print('Loaded parameters')
+            self.saver.restore(self.sess, conf.ckpt_dir + os.path.basename(os.path.normpath(conf.ckpt_dir)))
+            print('\n **** \n Loaded parameters \n **** \n')
         else:
             sess.run(tf.global_variables_initializer())
             print('Initialized parameters')
@@ -111,7 +111,7 @@ class CspnTrainer:
         self.log_path = log_path
         self.log_file = open(log_path + '/results.csv', 'a')
 
-    def run_training(self, no_save=False):
+    def run_training(self, no_save=False, each_iter=False):
         batch_size = self.conf.batch_size
         batches_per_epoch = self.data.train_y.shape[0] // batch_size
         for i in range(self.conf.num_epochs):
@@ -137,7 +137,7 @@ class CspnTrainer:
             # print(cur_output[:10])
             # acc = num_correct / (batch_size * batches_per_epoch)
             # print(i, acc, cur_loss)
-            if i % 2 == 1 and not no_save:
+            if i % 2 == 1 and not no_save or each_iter:
                 self.saver.save(self.sess, self.conf.ckpt_dir)
                 print('Parameters saved')
 
