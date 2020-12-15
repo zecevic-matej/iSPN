@@ -14,6 +14,7 @@ class CausalDataset():
         import pickle
         with open(path_data, "rb") as f:
             data = pickle.load(f)
+        self.data = data
         data = np.vstack((data[X], data[Y]))
         # random shuffle
         # np.random.seed(0)
@@ -31,6 +32,7 @@ with tf.device('/GPU:0'):
     conf = Config()
     conf.model_name = 'cspn'
     conf.num_epochs = 100
+    conf.batch_size = 64
 
     batch_size = conf.batch_size
     x_shape = (batch_size, 1)
@@ -59,8 +61,8 @@ with tf.device('/GPU:0'):
     spn = RAT_SPN.RatSpn(1, region_graph=rg, name="spn", args=args)
     print("TOTAL", spn.num_params())
 
-    X='H'
-    Y='M'
+    X='A' #'H'
+    Y='F' #'M'
     dataset = CausalDataset(X,Y,discrete=True)
 
     sess = tf.Session(config=tf.ConfigProto(
@@ -76,7 +78,9 @@ with tf.device('/GPU:0'):
                  trainer.train_ph: False}
     mpe = trainer.spn.reconstruct_batch(feed_dict, trainer.sess)
 
-    print(np.hstack((y_batch, mpe)))
+    import pandas as pd
+    df_mpe = pd.DataFrame(np.hstack((x_batch, y_batch, mpe)), columns=['X', 'Y', 'MPE(X)'])
+    print(df_mpe)
 
     '''
     TODO:
@@ -90,11 +94,18 @@ with tf.device('/GPU:0'):
     learned_gaussians = np.unique(trainer.spn.output_vector.np_means,axis=0)[:,0,:]
     states_X = np.unique(x_batch)
     states_Y = np.unique(y_batch)
+    assert(len(states_X) == len(np.unique(dataset.data[X])))
+    assert(len(states_Y) == len(np.unique(dataset.data[Y])))
     assert(len(states_X) == len(learned_gaussians))
     print('Learned to predict {} from {}'.format(Y, X))
 
-    discrete_gaussian=True
-    if discrete_gaussian:
+    # fix if above assertion does not hold
+    # learned_gaussians = np.repeat(learned_gaussians, len(np.unique(dataset.data[X])), axis=0)
+    # states_X = np.unique(dataset.data[X])
+    # states_Y = np.unique(dataset.data[Y])
+
+    method='one hot'
+    if method == 'discrete gaussian':
         f = lambda x, m, s: 1 / (np.sum([np.power(np.exp(1), -(k - m) ** 2 / (2 * (s ** 2))) \
                                          for k in np.arange(-100, 100)])) * np.power(np.exp(1), -(x - m) ** 2 / (2 * (s ** 2)))
         np_pt = np.zeros((len(states_Y), len(states_X)))
@@ -102,4 +113,17 @@ with tf.device('/GPU:0'):
             for r, y in enumerate(states_Y):
                 m, s = learned_gaussians[c,:]
                 np_pt[r,c] = f(y,m,s)
-        pt = pd.DataFrame(np_pt, columns=[X + '={}'.format(x) for x in states_X], index=[Y + '={}'.format(y) for y in states_Y])
+    elif method == 'one hot':
+        np_pt = np.zeros((len(states_Y), len(states_X)))
+        for c, x in enumerate(states_X):
+            m, _ = learned_gaussians[c,:]
+            ind_y = np.argmin([abs(y - m) for y in states_Y])
+            np_pt[ind_y,c] = 1
+
+    pt = pd.DataFrame(np_pt,
+                      columns=[X + '={} [{}]'.format(x, ind) for ind, x in enumerate(states_X)],
+                      index=[Y + '={} [{}]'.format(y, ind) for ind, y in enumerate(states_Y)])
+    save=False
+    if save:
+        pt.to_csv('../models/probability_table_cspn_causal_toy_dataset_p({}|{}).pkl'.format(Y,X))
+        print('Saved Probability Table.')

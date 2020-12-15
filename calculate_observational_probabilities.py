@@ -40,11 +40,11 @@ import itertools
 import pickle
 import pandas as pd
 
-model_path = 'models/spn_discrete.txt'
+model_path = 'models/spn_discrete_soft_intervention_Health.txt'
 model = load_spn_model(model_path)
 print('Loaded Model {}'.format(model_path))
 
-path_data = 'datasets/causal_health_toy_data_discrete.pkl'
+path_data = 'datasets/causal_health_toy_data_discrete_soft_intervention_Health.pkl'
 with open(path_data, "rb") as f:
     data = pickle.load(f)
 
@@ -73,7 +73,7 @@ for i, s in enumerate(states):
     print('{}/{}           '.format(i+1, len(states)), end='\r', flush=True)
 
 pt = pd.DataFrame(np.hstack((np.array(states), np.array(probs)[:,np.newaxis])), columns=['A','F','H','M','p'])
-pt.to_csv('models/probability_table_spn_causal_toy_dataset.pkl')
+pt.to_csv('models/probability_table_spn_causal_toy_dataset_soft_intervention_Health.pkl')
 
 
 '''
@@ -81,6 +81,11 @@ compute JSD
 '''
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import entropy
+import pandas as pd
+
+pt_obs = pd.read_csv('models/probability_table_spn_causal_toy_dataset.pkl')
+pt_int = pd.read_csv('models/probability_table_spn_causal_toy_dataset_soft_intervention_Health.pkl')
 
 # entropy(p,q,base=2) # relative entropy == kl divergence, default log is to base e, np.sum(kl_div(p,q))
-# jensenshannon(p,q,base=2)
+
+jsd = jensenshannon(pt_obs['p'], pt_int['p'], base=2)

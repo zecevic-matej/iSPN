@@ -23,7 +23,7 @@ class SCM_Health():
         age = lambda size: np.random.randint(low=18,high=80+1,size=size)
         food_habit = lambda age: 1 if age >= 40 else np.random.binomial(1,0.5)
         if discrete:
-            health = lambda age, food_habit: (0 if age >= 60 else (1.5 if age >= 30 else 3)) + food_habit + np.random.binomial(1,0.5)
+            health = lambda age, food_habit: np.random.choice(list(np.arange(1.,4.5,0.5)) + [5.]) #(0 if age >= 60 else (1.5 if age >= 30 else 3)) + food_habit + np.random.binomial(1,0.5)
             mobility = lambda health: 1/2 * health + np.random.binomial(1,0.5)
         else:
             health = lambda age, food_habit: 3/6 * (1 - (age-18)/(80-18)) + 2/6 * food_habit + 1/6 * np.random.binomial(1,0.5)
@@ -137,5 +137,5 @@ save=False
 
 if save:
     import pickle
-    with open('causal_health_toy_data_discrete.pkl', 'wb') as f:
+    with open('causal_health_toy_data_discrete_soft_intervention_Health.pkl', 'wb') as f:
         pickle.dump(data, f)
