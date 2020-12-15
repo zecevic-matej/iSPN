@@ -54,6 +54,14 @@ states_H = np.unique(data['H'])
 states_M = np.unique(data['M'])
 print('State Spaces: \nA={}\nF={}\nH={}\nM={}'.format(states_A,states_F,states_H,states_M))
 
+do_index_encoding=True
+if do_index_encoding:
+    states_A = np.arange(len(states_A))
+    states_F = np.arange(len(states_F))
+    states_H = np.arange(len(states_H))
+    states_M = np.arange(len(states_M))
+    print('Index Encoded State Spaces: \nA={}\nF={}\nH={}\nM={}'.format(states_A, states_F, states_H, states_M))
+
 print('\nPlease make sure your Model was trained on this Dataset!')
 
 states = list(itertools.product(states_A, states_F, states_H, states_M))

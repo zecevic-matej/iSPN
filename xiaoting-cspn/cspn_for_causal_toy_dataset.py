@@ -6,7 +6,7 @@ import model
 from main import Config, CspnTrainer
 
 class CausalDataset():
-    def __init__(self, discrete=True):
+    def __init__(self, X, Y, discrete=True):
         if discrete:
             path_data = '../datasets/causal_health_toy_data_discrete.pkl'
         else:
@@ -14,7 +14,7 @@ class CausalDataset():
         import pickle
         with open(path_data, "rb") as f:
             data = pickle.load(f)
-        data = np.vstack((data['H'], data['M']))
+        data = np.vstack((data[X], data[Y]))
         # random shuffle
         # np.random.seed(0)
         # random_indices = np.random.permutation(np.arange(len(data[0,:])))
@@ -59,7 +59,9 @@ with tf.device('/GPU:0'):
     spn = RAT_SPN.RatSpn(1, region_graph=rg, name="spn", args=args)
     print("TOTAL", spn.num_params())
 
-    dataset = CausalDataset()
+    X='H'
+    Y='M'
+    dataset = CausalDataset(X,Y,discrete=True)
 
     sess = tf.Session(config=tf.ConfigProto(
         allow_soft_placement=True, log_device_placement=True))
@@ -84,3 +86,20 @@ with tf.device('/GPU:0'):
         With Categorical we'd have |X| times |Y| values.
         Then save it for loading to a later point.
     '''
+    import pandas as pd
+    learned_gaussians = np.unique(trainer.spn.output_vector.np_means,axis=0)[:,0,:]
+    states_X = np.unique(x_batch)
+    states_Y = np.unique(y_batch)
+    assert(len(states_X) == len(learned_gaussians))
+    print('Learned to predict {} from {}'.format(Y, X))
+
+    discrete_gaussian=True
+    if discrete_gaussian:
+        f = lambda x, m, s: 1 / (np.sum([np.power(np.exp(1), -(k - m) ** 2 / (2 * (s ** 2))) \
+                                         for k in np.arange(-100, 100)])) * np.power(np.exp(1), -(x - m) ** 2 / (2 * (s ** 2)))
+        np_pt = np.zeros((len(states_Y), len(states_X)))
+        for c, x in enumerate(states_X):
+            for r, y in enumerate(states_Y):
+                m, s = learned_gaussians[c,:]
+                np_pt[r,c] = f(y,m,s)
+        pt = pd.DataFrame(np_pt, columns=[X + '={}'.format(x) for x in states_X], index=[Y + '={}'.format(y) for y in states_Y])
