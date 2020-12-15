@@ -2,4 +2,7 @@
 
 
 Based on the following idea:
-![](media/CausalSPN_via_CSPN.png)
+![](media/CausalSPN_via_CSPN.jpg)
+
+Following Data is used:
+![](media/discretized_data.jpg)

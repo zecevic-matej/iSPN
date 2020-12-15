@@ -715,6 +715,7 @@ class RatSpn(object):
             recons.append(self.reconstruct(max_idxs, i, sample))
         recons = np.stack(recons, axis=0)
         #recons = np.clip(recons, 0.0, 1.0)
+        #import pdb; pdb.set_trace()
         return recons
 
 
