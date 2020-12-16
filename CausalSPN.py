@@ -69,30 +69,34 @@ class CausalSPN():
         if provided a SPN-style joint model als Probability Table (pt)
         then using then create the Conditional PT for Y given X
         by using Bayes Rule i.e., p(Y,X)/p(X) = p(Y|X)
+        X is provided as list of strings, while Y is a single string - indicating the node name
         """
-        state_indices = [self.states_indices[k] for k in (Y,X)]
+        assert(len(list(Y))==1 and len(list(X)) >= 1 and isinstance(X, list))
+        state_indices = [self.states_indices[k] for k in [Y] + X]
         states_yx = np.unique(np.array(self.states)[:, state_indices], axis=0)
-        assert(states_yx.shape[1] == 2)
         states_y = np.unique(states_yx[:,0])
-        states_x = np.unique(states_yx[:,1])
+        states_x = np.unique(states_yx[:,1:],axis=0)
 
         probs = []
         visited_states = []
         for ix, x in enumerate(states_x):
-            p_x = np.sum([pt['p'][i] for i in np.where(pt[X] == x)[0]])
+            p_x = np.sum([pt['p'][i] for i in np.where((pt[X] == x).all(axis=1))[0]])
             if np.allclose(p_x, 0):
                 print('Encountered Division by Zero.')
-                import pdb; pdb.set_trace()
+                # TODO: Dev suggested that this is indeed the fault of the learned SPN, thus we will ignore it for now
             for iy, y in enumerate(states_y):
-                p_yx = np.sum([pt['p'][i] for i in np.where((pt[[Y, X]] == (y, x)).all(axis=1))[0]])
+                p_yx = np.sum([pt['p'][i] for i in np.where((pt[[Y] + X] == np.hstack((y,x))).all(axis=1))[0]])
                 p_y_given_x = p_yx / p_x
-                #print('p(Y={},X={}) = {}, p(x) = {} -> p(y|x) = {}'.format(y, x, p_yx, p_x, p_y_given_x))
+                print('p(Y={},X={}) = {}, p(x) = {} -> p(y|x) = {}'.format(y, x, p_yx, p_x, p_y_given_x))
                 probs.append(p_y_given_x)
-                visited_states.append([y,x])
+                visited_states.append(np.hstack((y,x)))
                 print('     {}/{}           '.format((ix*len(states_y) + iy) + 1, len(states_yx)), end='\r', flush=True)
         cpt = pd.DataFrame(np.hstack((np.array(visited_states), np.array(probs)[:, np.newaxis])),
-                          columns=[Y, X, 'p'])
-        k = 'p({}|{}) (SPN)'.format(Y,X)
+                          columns=[Y] + X + ['p'])
+        if len(X) == 1:
+            k = 'p({}|{}) (SPN)'.format(Y, X[0])
+        else:
+            k = ('p({}|' + ",".join([x for x in X]) + ') (SPN)').format(Y)
         self.approximations.update({k: cpt})
         print('Pre-computed the probability table for {} using the existing SPN joint model.'.format(k))
 
