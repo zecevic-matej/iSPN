@@ -40,12 +40,14 @@ import itertools
 import pickle
 import pandas as pd
 
-model_path = 'models/spn_discrete_soft_intervention_Health.txt'
+model_path = 'models/spn_discrete_softened.txt'
+data_path = 'datasets/causal_health_toy_data_discrete.pkl'
+save_path = 'models/probability_table_spn_causal_toy_dataset_softened.csv'
+
 model = load_spn_model(model_path)
 print('Loaded Model {}'.format(model_path))
 
-path_data = 'datasets/causal_health_toy_data_discrete_soft_intervention_Health.pkl'
-with open(path_data, "rb") as f:
+with open(data_path, "rb") as f:
     data = pickle.load(f)
 
 states_A = np.unique(data['A'])
@@ -70,10 +72,10 @@ print('Creating probability table for {} states'.format(len(states)))
 probs = []
 for i, s in enumerate(states):
     probs.append(likelihood(model,np.array(s)[np.newaxis,:])[0][0])
-    print('{}/{}           '.format(i+1, len(states)), end='\r', flush=True)
+    print('    {}/{}           '.format(i+1, len(states)), end='\r', flush=True)
 
 pt = pd.DataFrame(np.hstack((np.array(states), np.array(probs)[:,np.newaxis])), columns=['A','F','H','M','p'])
-pt.to_csv('models/probability_table_spn_causal_toy_dataset_soft_intervention_Health.pkl')
+pt.to_csv(save_path)
 
 
 '''
@@ -89,3 +91,34 @@ pt_int = pd.read_csv('models/probability_table_spn_causal_toy_dataset_soft_inter
 # entropy(p,q,base=2) # relative entropy == kl divergence, default log is to base e, np.sum(kl_div(p,q))
 
 jsd = jensenshannon(pt_obs['p'], pt_int['p'], base=2)
+
+
+'''
+get all leaf nodes spn (spflow) and modify them (recursive)
+'''
+def get_leaf_nodes(node):
+    if hasattr(node, 'children'):
+        leaf_nodes = [get_leaf_nodes(n) for n in node.children]
+        return leaf_nodes
+    else:
+        return node
+ln = []
+def reemovNestings(l):
+    for i in l:
+        if type(i) == list:
+            reemovNestings(i)
+        else:
+            ln.append(i)
+
+reemovNestings(get_leaf_nodes(model))
+ln_binary = [ln[i] for i in np.where(np.array([len(x.p) for x in ln])==2)[0]]
+
+def change_p(node, p_new):
+    node.p = p_new
+
+# setting all binary nodes which have half-support to be 'softer'
+for node in ln_binary:
+    if np.allclose(node.p, [1., 0.]):
+        change_p(node, [0.9, 0.1])
+    if np.allclose(node.p, [0., 1.]):
+        change_p(node, [0.1, 0.9])

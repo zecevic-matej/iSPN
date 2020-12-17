@@ -125,5 +125,5 @@ with tf.device('/GPU:0'):
                       index=[Y + '={} [{}]'.format(y, ind) for ind, y in enumerate(states_Y)])
     save=False
     if save:
-        pt.to_csv('../models/probability_table_cspn_causal_toy_dataset_p({}|{}).pkl'.format(Y,X))
+        pt.to_csv('../models/probability_table_cspn_causal_toy_dataset_p({}|{}).csv'.format(Y,X))
         print('Saved Probability Table.')
