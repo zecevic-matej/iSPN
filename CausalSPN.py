@@ -238,7 +238,7 @@ jsd_obs_approx_spn_vs_obs = jensenshannon(causal_spn.approximations['p(A,F,H,M) 
 print('Jensen-Shannon-Divergence Obs Approx (SPN) vs. Obs : {}'.format(jsd_obs_approx_spn_vs_obs))
 
 jsd_obs_approx_spn_vs_int = jensenshannon(causal_spn.approximations['p(A,F,H,M) (SPN)']['p'],causal_spn.models['p(A,F,M|do(H=U(H))']['p'], base=2)
-print('Jensen-Shannon-Divergence Obs Approx (SPN) vs. Int : {}'.format(jsd_obs_approx_spn_vs_obs))
+print('Jensen-Shannon-Divergence Obs Approx (SPN) vs. Int : {}'.format(jsd_obs_approx_spn_vs_int))
 
 query = 'p(A,F,M|do(H=U(H))'
 causal_spn.p(query=query)
