@@ -207,8 +207,8 @@ Load pre-computed Models and CausalSPN Approximations
 '''
 models = {
     'p(A,F,H,M)': 'models/probability_table_spn_causal_toy_dataset_softened.csv',#'models/probability_table_spn_causal_toy_dataset.csv',
-    'p(F|A)': 'models/probability_table_cspn_causal_toy_dataset_p(F|A).csv',
-    'p(M|H)': 'models/probability_table_cspn_causal_toy_dataset_p(M|H).csv',
+    'p(F|A)': 'models/probability_table_cspn_causal_toy_dataset_p(F_given_A).csv',
+    'p(M|H)': 'models/probability_table_cspn_causal_toy_dataset_p(M_given_H).csv',
     'p(A,F,M|do(H=U(H))': 'models/probability_table_spn_causal_toy_dataset_soft_intervention_Health.csv'
 }
 
