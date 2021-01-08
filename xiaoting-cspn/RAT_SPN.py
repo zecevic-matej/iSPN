@@ -287,6 +287,81 @@ class GaussVector(NodeVector):
             result += self.sigma.shape.num_elements()
         return result
 
+class CategoricalVector(NodeVector):
+    def __init__(self, region, args, name,
+                 given_params=None, num_dims=0):
+        super().__init__(name)
+        self.local_size = len(region)
+        self.args = args
+        self.scope = sorted(list(region))
+        self.size = args.num_gauss
+        self.num_dims = num_dims
+        self.np_params = None
+        self.params = self.args.param_provider.grab_leaf_parameters(
+            self.scope,
+            args.num_gauss,
+            name=name + "_p")
+
+        self.dist = dists.Categorical(logits=self.params)
+
+    def forward(self, inputs, marginalized=None):
+        local_inputs = tf.gather(inputs, self.scope, axis=1)
+        local_inputs = tf.expand_dims(local_inputs, axis=-1)
+        # gauss_log_pdf_single = - 0.5 * (tf.expand_dims(local_inputs, -1) - self.means) ** 2 / self.sigma \
+        #                        - tf.log(tf.sqrt(2 * np.pi * self.sigma))
+        log_pdf_single = self.dist.log_prob(local_inputs)
+
+        if marginalized is not None:
+            marginalized = tf.clip_by_value(marginalized, 0.0, 1.0)
+            local_marginalized = tf.expand_dims(tf.gather(marginalized, self.scope, axis=1), axis=-1)
+            # weighted_gauss_pdf = (1 - local_marginalized) * tf.exp(gauss_log_pdf_single)
+            # local_marginalized_broadcast = local_marginalized * tf.ones_like(weighted_gauss_pdf)
+
+            # stacked = tf.stack([weighted_gauss_pdf, local_marginalized_broadcast], axis=3)
+            # gauss_log_pdf_single = tf.log(weighted_gauss_pdf + local_marginalized_broadcast)
+            log_pdf_single *= (1 - local_marginalized)
+
+        log_pdf = tf.reduce_sum(log_pdf_single, 1)
+        return log_pdf
+
+    def modes(self, case_num=0):
+        probs = 1 / (1 + np.exp(-self.np_params[case_num]))
+        return np.round(probs)
+
+    def reconstruct(self, max_idxs, node_num, case_num, sample):
+        if sample:
+            my_sample = sess.run(self.dist.sample())[case_num]
+        else:
+            my_sample = self.modes(case_num)
+
+        my_sample = my_sample[:, node_num]
+        full_sample = np.zeros((self.num_dims,))
+        full_sample[self.scope] = my_sample
+        return full_sample
+
+    def sample(self, num_samples, num_dims, seed=None):
+        # print(num_samples)
+        # print(num_dims)
+        sample_values = self.dist.sample(num_samples, seed=seed)[:, 0]
+        sess = tf.Session()
+        sess.run(tf.global_variables_initializer())
+        # print(sess.run(sample_values))
+        # print("sampled:", sample_values)
+        # print("scope: ", self.scope)
+
+        sample_shape = [num_samples, num_dims, self.size]
+        indices = tf.meshgrid(tf.range(num_samples), self.scope, tf.range(self.size))
+        indices = tf.stack(indices, axis=-1)
+        indices = tf.transpose(indices, [1, 0, 2, 3])
+        samples = tf.scatter_nd(indices, sample_values, sample_shape)
+        # print(sess.run(samples))
+        # indices is for filling the other values with 0s so we can just add in the same dimenison simply
+        # print("returned samples:", samples)
+        # print("-----------------t")
+        return samples
+
+    def num_params(self):
+        return self.params.shape[1:].num_elements()
 
 class ProductVector(NodeVector):
     def __init__(self, vector1, vector2, name):
@@ -611,6 +686,9 @@ class RatSpn(object):
             elif self.args.dist == 'Bernoulli':
                 name = 'bernoulli_{}'.format(i)
                 leaf_vector = BernoulliVector(leaf_region, self.args, name, num_dims=self.num_dims)
+            elif self.args.dist == 'Categorical':
+                name = 'categorical_{}'.format(i)
+                leaf_vector = CategoricalVector(leaf_region, self.args, name, num_dims=self.num_dims)
             self.vector_list[-1].append(leaf_vector)
             self._region_distributions[leaf_region] = leaf_vector
 
@@ -729,6 +807,8 @@ class RatSpn(object):
                 param_tensors[leaf_vector] = leaf_vector.means
             elif isinstance(leaf_vector, BernoulliVector):
                 param_tensors[leaf_vector] = leaf_vector.params
+            elif isinstance(leaf_vector, CategoricalVector):
+                param_tensors[leaf_vector] = leaf_vector.params
             else:
                 raise ValueError('unknown leaf vector')
         params_np = sess.run(param_tensors, feed_dict=feed_dict)
@@ -736,6 +816,8 @@ class RatSpn(object):
             if isinstance(leaf_vector, GaussVector):
                 leaf_vector.np_means = params_np[leaf_vector]
             elif isinstance(leaf_vector, BernoulliVector):
+                leaf_vector.np_params = params_np[leaf_vector]
+            elif isinstance(leaf_vector, CategoricalVector):
                 leaf_vector.np_params = params_np[leaf_vector]
 
     def num_params(self):
