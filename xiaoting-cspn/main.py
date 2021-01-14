@@ -128,6 +128,12 @@ class CspnTrainer:
 
                 if j % 100 == 0:
                     print('ep. {}, batch {}, train ll {:.2f}'.format(i, j, -cur_loss))
+                    mpe = self.spn.reconstruct_batch(feed_dict, self.sess)
+                    result = np.hstack((y_batch, mpe))
+                    if "Gauss" in str(self.spn.vector_list[0][0]):
+                        result = np.round(result)
+                    print("Train Batch Hits: {}".format((result[:, 0] == result[:, 1]).sum()))
+                    #import pdb;pdb.set_trace()
                     # self.validate(i, j, -cur_loss)
                     # mpe = data.merge_data(data.test_x[:batch_size], mpe)[..., 0]
                     # original = data.test_im[:batch_size][..., 0]
@@ -205,12 +211,50 @@ def get_var(shape, name):
     # def split_data(self, data):
         # return data[:, :28 * 28//2], data[:, 28 * 28//2:]
 
+def binarize_minst_labels(label_data):
+    """
+    even numbers are 0
+    odd numbers are 1
+    """
+    for ind, y in enumerate(label_data):
+        if y % 2 == 0:
+            label_data[ind, 0] = 0
+        else:
+            label_data[ind, 0] = 1
+    return label_data
+
+def multirize_minst_labels(label_data):
+    """
+    0-2 are 0
+    3-5 are 1
+    6-8 are 2
+    9 is 3
+    """
+    for ind, y in enumerate(label_data):
+        if y in [0,1,2]:
+            label_data[ind, 0] = 0
+        elif y in [3,4,5]:
+            label_data[ind, 0] = 1
+        elif y in [6,7,8]:
+            label_data[ind, 0] = 2
+        else:
+            label_data[ind, 0] = 3
+    return label_data
 
 class MnistDataset:
-    def __init__(self, multilabel=False):
+    def __init__(self, multilabel=False, binarize=False, multirize=False):
         (self.train_x, self.train_y), (self.test_x, self.test_y) = load_mnist(fashion=False)
         self.train_y = np.reshape(self.train_y,  (-1, 1)) #np.load('data/mnist-train-labels.npy')
         self.test_y = np.reshape(self.test_y,  (-1, 1)) #np.load('data/mnist-test-labels.npy')
+
+        if binarize and not multirize:
+            print('Using Binarized MNIST Labels.')
+            self.train_y = binarize_minst_labels(self.train_y)
+            self.test_y = binarize_minst_labels(self.test_y)
+        if multirize and not binarize:
+            print('Using Multirized MNIST Labels.')
+            self.train_y = multirize_minst_labels(self.train_y)
+            self.test_y = multirize_minst_labels(self.test_y)
 
 
 class FashionDataset:

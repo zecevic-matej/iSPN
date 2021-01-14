@@ -1,5 +1,9 @@
 import numpy as np
+np.set_printoptions(suppress=True)
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import tensorflow as tf
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 import RAT_SPN
 from relu_mlp import ReluMLP
 import region_graph
@@ -12,7 +16,7 @@ with tf.device('/GPU:0'):
     conf.model_name = 'cspn'
     conf.dataset = 'mnist'
     conf.num_epochs = 1
-    conf.ckpt_dir = './checkpoints/cspn-regular-mnist'
+    conf.ckpt_dir = './checkpoints/none'#'./checkpoints/cspn-regular-mnist'
     #fashion_mnist_attr(conf)
 
     batch_size = conf.batch_size
@@ -38,18 +42,19 @@ with tf.device('/GPU:0'):
     args.param_provider = param_provider
     args.num_sums = 8
     args.num_gauss = 4
-    args.dist = 'Gauss' #'Bernoulli'   # choose distribution
-    spn = RAT_SPN.RatSpn(1, region_graph=rg, name="spn", args=args)
+    args.dist = 'Categorical'   # choose distribution
+    num_classes = 4
+    spn = RAT_SPN.RatSpn(num_classes=num_classes, region_graph=rg, name="spn", args=args)
     print("TOTAL", spn.num_params())
 
 
     if conf.dataset == 'mnist':
-        dataset = MnistDataset()
+        dataset = MnistDataset(binarize=False, multirize=True)
     else:
         raise ValueError('Unknown dataset ' + conf.dataset)
 
     sess = tf.Session(config=tf.ConfigProto(
-        allow_soft_placement=True, log_device_placement=True))
+        allow_soft_placement=True, log_device_placement=False))
     trainer = CspnTrainer(spn, dataset, x_ph, train_ph, conf, sess=sess)
     trainer.run_training(each_iter=True)
 
@@ -61,4 +66,10 @@ with tf.device('/GPU:0'):
                  trainer.train_ph: False}
     mpe = trainer.spn.reconstruct_batch(feed_dict, trainer.sess)
     #mpe = np.reshape(mpe, y_batch.shape)
-    print(np.hstack((y_batch,mpe)))
+
+    result = np.hstack((y_batch,mpe))
+    if args.dist == 'Gauss':
+        result = np.round(result)
+    hits = (result[:, 0] == result[:, 1]).sum()
+    acc = 100 * (hits / len(y_batch))
+    print('Accuracy is {}% ({}/{})'.format(acc, hits, len(y_batch)))

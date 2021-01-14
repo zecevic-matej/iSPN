@@ -155,10 +155,14 @@ class BernoulliVector(NodeVector):
 
     def forward(self, inputs, marginalized=None):
         local_inputs = tf.gather(inputs, self.scope, axis=1)
+        print(local_inputs)
         local_inputs = tf.expand_dims(local_inputs, axis=-1)
         # gauss_log_pdf_single = - 0.5 * (tf.expand_dims(local_inputs, -1) - self.means) ** 2 / self.sigma \
         #                        - tf.log(tf.sqrt(2 * np.pi * self.sigma))
         log_pdf_single = self.dist.log_prob(local_inputs)
+        print(log_pdf_single)
+        print(self.dist)
+        print(local_inputs)
 
         if marginalized is not None:
             marginalized = tf.clip_by_value(marginalized, 0.0, 1.0)
@@ -177,15 +181,16 @@ class BernoulliVector(NodeVector):
         probs = 1 / (1 + np.exp(-self.np_params[case_num]))
         return np.round(probs)
 
-    def reconstruct(self, max_idxs, node_num, case_num, sample):
-        if sample:
-            my_sample = sess.run(self.dist.sample())[case_num]
+    def reconstruct(self, max_idxs, node_num, case_num, sample, sess, feed_dict):
+        if True:#sample:
+            my_sample = sess.run(self.dist.sample(), feed_dict=feed_dict)[case_num]
         else:
             my_sample = self.modes(case_num)
 
         my_sample = my_sample[:, node_num]
         full_sample = np.zeros((self.num_dims,))
         full_sample[self.scope] = my_sample
+        # import pdb; pdb.set_trace()
         return full_sample
 
     def sample(self, num_samples, num_dims, seed=None):
@@ -260,7 +265,7 @@ class GaussVector(NodeVector):
         gauss_log_pdf = tf.reduce_sum(gauss_log_pdf_single, 1)
         return gauss_log_pdf
 
-    def reconstruct(self, max_idxs, node_num, case_num, sample):
+    def reconstruct(self, max_idxs, node_num, case_num, sample, sess, feed_dict):
         if sample:
             my_sample = sess.run(self.dist.sample())[case_num]
         else:
@@ -289,27 +294,29 @@ class GaussVector(NodeVector):
 
 class CategoricalVector(NodeVector):
     def __init__(self, region, args, name,
-                 given_params=None, num_dims=0):
+                 given_params=None, num_dims=0, num_classes=-1):
         super().__init__(name)
         self.local_size = len(region)
         self.args = args
         self.scope = sorted(list(region))
         self.size = args.num_gauss
         self.num_dims = num_dims
+        self.num_classes = num_classes
         self.np_params = None
-        self.params = self.args.param_provider.grab_leaf_parameters(
-            self.scope,
-            args.num_gauss,
-            name=name + "_p")
-
-        self.dist = dists.Categorical(logits=self.params)
+        self.params = self.args.param_provider.grab_leaf_parameters(self.scope, self.num_classes,name=name + "_p")#args.num_gauss
+        #import pdb; pdb.set_trace()
+        self.dist = dists.Categorical(logits=tf.expand_dims(self.params,axis=1))
 
     def forward(self, inputs, marginalized=None):
         local_inputs = tf.gather(inputs, self.scope, axis=1)
+        print(local_inputs)
         local_inputs = tf.expand_dims(local_inputs, axis=-1)
         # gauss_log_pdf_single = - 0.5 * (tf.expand_dims(local_inputs, -1) - self.means) ** 2 / self.sigma \
         #                        - tf.log(tf.sqrt(2 * np.pi * self.sigma))
         log_pdf_single = self.dist.log_prob(local_inputs)
+        print(log_pdf_single)
+        print(self.dist)
+        print(local_inputs)
 
         if marginalized is not None:
             marginalized = tf.clip_by_value(marginalized, 0.0, 1.0)
@@ -324,22 +331,29 @@ class CategoricalVector(NodeVector):
         log_pdf = tf.reduce_sum(log_pdf_single, 1)
         return log_pdf
 
-    def modes(self, case_num=0):
-        probs = 1 / (1 + np.exp(-self.np_params[case_num]))
+    def modes(self, case_num=0): # TODO: during training this is never called
+        #probs = 1 / (1 + np.exp(-self.np_params[case_num]))
+        probs = 1/0
         return np.round(probs)
 
-    def reconstruct(self, max_idxs, node_num, case_num, sample):
-        if sample:
-            my_sample = sess.run(self.dist.sample())[case_num]
+    def reconstruct(self, max_idxs, node_num, case_num, sample, sess, feed_dict):
+        # TODO: these 'sample' approaches (also for GaussVector, BernoulliVector) don't work
+        #       they require a session but the session that can be provided is incompatible
+        #       and causes an error
+        if True:#sample:
+            my_sample = sess.run(self.dist.sample(), feed_dict=feed_dict)[case_num]
         else:
             my_sample = self.modes(case_num)
 
         my_sample = my_sample[:, node_num]
         full_sample = np.zeros((self.num_dims,))
         full_sample[self.scope] = my_sample
+        # import pdb; pdb.set_trace()
         return full_sample
 
-    def sample(self, num_samples, num_dims, seed=None):
+    def sample(self, num_samples, num_dims, seed=None): # TODO: during training this is never called
+        probs = 1/0
+
         # print(num_samples)
         # print(num_dims)
         sample_values = self.dist.sample(num_samples, seed=seed)[:, 0]
@@ -688,7 +702,7 @@ class RatSpn(object):
                 leaf_vector = BernoulliVector(leaf_region, self.args, name, num_dims=self.num_dims)
             elif self.args.dist == 'Categorical':
                 name = 'categorical_{}'.format(i)
-                leaf_vector = CategoricalVector(leaf_region, self.args, name, num_dims=self.num_dims)
+                leaf_vector = CategoricalVector(leaf_region, self.args, name, num_dims=self.num_dims, num_classes=self.num_classes)
             self.vector_list[-1].append(leaf_vector)
             self._region_distributions[leaf_region] = leaf_vector
 
@@ -790,15 +804,15 @@ class RatSpn(object):
         max_idxs = sess.run(max_idx_tensors, feed_dict=feed_dict)
         recons = []
         for i in range(batch_size):
-            recons.append(self.reconstruct(max_idxs, i, sample))
+            recons.append(self.reconstruct(max_idxs, i, sample, sess, feed_dict))
         recons = np.stack(recons, axis=0)
         #recons = np.clip(recons, 0.0, 1.0)
         #import pdb; pdb.set_trace()
         return recons
 
 
-    def reconstruct(self, max_idxs, case_num, sample):
-        return self.output_vector.reconstruct(max_idxs, 0, case_num, sample)
+    def reconstruct(self, max_idxs, case_num, sample, sess, feed_dict):
+        return self.output_vector.reconstruct(max_idxs, 0, case_num, sample, sess, feed_dict)
 
     def eval_params(self, sess, feed_dict):
         param_tensors = {}
