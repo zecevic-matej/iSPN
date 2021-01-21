@@ -265,7 +265,7 @@ class GaussVector(NodeVector):
         gauss_log_pdf = tf.reduce_sum(gauss_log_pdf_single, 1)
         return gauss_log_pdf
 
-    def reconstruct(self, max_idxs, node_num, case_num, sample, sess, feed_dict):
+    def reconstruct(self, max_idxs, node_num, case_num, sample, sess=None, feed_dict=None):
         if sample:
             my_sample = sess.run(self.dist.sample())[case_num]
         else:
@@ -435,7 +435,7 @@ class ProductVector(NodeVector):
         # print("res:", result)
         return result
 
-    def reconstruct(self, max_idxs, node_num, case_num, sample):
+    def reconstruct(self, max_idxs, node_num, case_num, sample, sess=None, feed_dict=None):
         row_num = node_num // self.vector1.size
         col_num = node_num % self.vector1.size
         result1 = self.vector1.reconstruct(max_idxs, col_num, case_num, sample)
@@ -511,7 +511,7 @@ class SumVector(NodeVector):
 
         return sums
 
-    def reconstruct(self, max_idxs, node_num, case_num, sample):
+    def reconstruct(self, max_idxs, node_num, case_num, sample, sess=None, feed_dict=None):
         my_max_idx = max_idxs[self.name][case_num, node_num]
         for inp_vector in self.inputs:
             if my_max_idx < inp_vector.size:

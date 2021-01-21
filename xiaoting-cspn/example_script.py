@@ -43,13 +43,14 @@ with tf.device('/GPU:0'):
     args.num_sums = 8
     args.num_gauss = 4
     args.dist = 'Categorical'   # choose distribution
-    num_classes = 4
+    print('Using {} vectors'.format(args.dist))
+    num_classes = 4#[10,2]
     spn = RAT_SPN.RatSpn(num_classes=num_classes, region_graph=rg, name="spn", args=args)
     print("TOTAL", spn.num_params())
 
 
     if conf.dataset == 'mnist':
-        dataset = MnistDataset(binarize=False, multirize=True)
+        dataset = MnistDataset(binarize=False, multirize=True, multidim=False)
     else:
         raise ValueError('Unknown dataset ' + conf.dataset)
 
@@ -67,9 +68,18 @@ with tf.device('/GPU:0'):
     mpe = trainer.spn.reconstruct_batch(feed_dict, trainer.sess)
     #mpe = np.reshape(mpe, y_batch.shape)
 
+    if len(y_batch.shape) == 2:
+        dims = y_batch.shape[1]
+    else:
+        dims = 1
     result = np.hstack((y_batch,mpe))
     if args.dist == 'Gauss':
         result = np.round(result)
-    hits = (result[:, 0] == result[:, 1]).sum()
+    hits = ((result[:, :dims] == result[:, dims:dims+dims]).all(axis=1)).sum()
     acc = 100 * (hits / len(y_batch))
     print('Accuracy is {}% ({}/{})'.format(acc, hits, len(y_batch)))
+    if dims > 1:
+        for i in range(dims):
+            hits = ((result[:, i:i+1] == result[:, dims+i:dims+i+1]).all(axis=1)).sum()
+            acc = 100 * (hits / len(y_batch))
+            print('Dimension {} accuracy is {}% ({}/{})'.format(i, acc, hits, len(y_batch)))

@@ -129,10 +129,20 @@ class CspnTrainer:
                 if j % 100 == 0:
                     print('ep. {}, batch {}, train ll {:.2f}'.format(i, j, -cur_loss))
                     mpe = self.spn.reconstruct_batch(feed_dict, self.sess)
+                    # TODO: below is just a copy of what is used at the end of example_script.py - maybe combine into one
+                    if len(y_batch.shape) == 2:
+                        dims = y_batch.shape[1]
+                    else:
+                        dims = 1
                     result = np.hstack((y_batch, mpe))
                     if "Gauss" in str(self.spn.vector_list[0][0]):
                         result = np.round(result)
-                    print("Train Batch Hits: {}".format((result[:, 0] == result[:, 1]).sum()))
+                    print("Train Batch Hits: {}".format(((result[:, :dims] == result[:, dims:dims+dims]).all(axis=1)).sum()))
+                    if dims > 1:
+                        for i in range(dims):
+                            hits = ((result[:, i:i + 1] == result[:, dims + i:dims + i + 1]).all(axis=1)).sum()
+                            acc = 100 * (hits / len(y_batch))
+                            print('Dimension {} accuracy is {}% ({}/{})'.format(i, acc, hits, len(y_batch)))
                     #import pdb;pdb.set_trace()
                     # self.validate(i, j, -cur_loss)
                     # mpe = data.merge_data(data.test_x[:batch_size], mpe)[..., 0]
@@ -242,15 +252,24 @@ def multirize_minst_labels(label_data):
     return label_data
 
 class MnistDataset:
-    def __init__(self, multilabel=False, binarize=False, multirize=False):
+    def __init__(self, special_labels=False, binarize=False, multirize=False, multidim=False):
         (self.train_x, self.train_y), (self.test_x, self.test_y) = load_mnist(fashion=False)
-        self.train_y = np.reshape(self.train_y,  (-1, 1)) #np.load('data/mnist-train-labels.npy')
-        self.test_y = np.reshape(self.test_y,  (-1, 1)) #np.load('data/mnist-test-labels.npy')
+        if special_labels:
+            self.train_y = np.load('data/mnist-train-labels.npy')
+            self.test_y = np.load('data/mnist-test-labels.npy')
+        else:
+            self.train_y = np.reshape(self.train_y,  (-1, 1))
+            self.test_y = np.reshape(self.test_y,  (-1, 1))
 
         if binarize and not multirize:
-            print('Using Binarized MNIST Labels.')
-            self.train_y = binarize_minst_labels(self.train_y)
-            self.test_y = binarize_minst_labels(self.test_y)
+            if multidim:
+                print('Adding Binarized MNIST Labels to regular Labels.')
+                self.train_y = np.hstack((self.train_y, binarize_minst_labels(self.train_y.copy())))
+                self.test_y = np.hstack((self.test_y, binarize_minst_labels(self.test_y.copy())))
+            else:
+                print('Using Binarized MNIST Labels.')
+                self.train_y = binarize_minst_labels(self.train_y)
+                self.test_y = binarize_minst_labels(self.test_y)
         if multirize and not binarize:
             print('Using Multirized MNIST Labels.')
             self.train_y = multirize_minst_labels(self.train_y)
