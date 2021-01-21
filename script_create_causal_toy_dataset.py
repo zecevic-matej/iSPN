@@ -51,6 +51,8 @@ class SCM_Health():
         Hs = np.array([self.equations['H'](a, Fs[ind]) for ind, a in enumerate(As)])
         Ms = np.array([self.equations['M'](h) for h in Hs])
 
+        data = {'A': As, 'F': Fs, 'H': Hs, 'M': Ms}
+
         if domains:
             domain = lambda N, x: np.unique(data[x]) if N >= 1000 else None
             dA = domain(sample_size, 'A')
@@ -66,7 +68,7 @@ class SCM_Health():
                   '\tMobility    = {}'
                   '\n'.format(self.intervention, dA,dF,dH,dM))
 
-        return {'A': As, 'F': Fs, 'H': Hs, 'M': Ms}
+        return data
 
     def do(self,intervention):
         """
@@ -100,7 +102,7 @@ interventions = [
 domains = {}
 
 np.random.seed(0)
-N = 1000
+N = 100000
 
 dir_save = "datasets/data_for_uniform_interventions" # from causal-spn base folder
 save = True
@@ -216,7 +218,7 @@ for interv in interventions:
             os.makedirs(dir_save)
             print("Created directory: {}".format(dir_save))
         save_location = os.path.join(dir_save,
-                               'causal_health_toy_data_discrete_intervention_{}.pkl'.format(interv_desc))
+                               'causal_health_toy_data_discrete_intervention_{}_100k.pkl'.format(interv_desc))
         with open(save_location,'wb') as f:
             pickle.dump(data, f)
             print("Saved Data @ {}".format(save_location))
