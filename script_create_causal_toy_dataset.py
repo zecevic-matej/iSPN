@@ -23,14 +23,16 @@ class SCM_Health():
 
     def __init__(self, discrete=True, domains={}):
 
-        age = lambda size: np.random.randint(low=18,high=80+1,size=size)[0]
-        food_habit = lambda age: 1 if age >= 40 else np.random.binomial(1,0.5)
         if discrete:
+            age = lambda size: np.random.randint(low=18,high=80+1,size=size)[0]
+            food_habit = lambda age: 1 if age >= 40 else np.random.binomial(1,0.5)
             health = lambda age, food_habit: (0 if age >= 60 else (1.5 if age >= 30 else 3)) + food_habit + np.random.binomial(1,0.5)
             mobility = lambda health: 1/2 * health + np.random.binomial(1,0.5)
         else:
-            health = lambda age, food_habit: 3/6 * (1 - (age-18)/(80-18)) + 2/6 * food_habit + 1/6 * np.random.binomial(1,0.5)
-            mobility = lambda health: 4/5 * health + 1/5 * np.random.binomial(1,0.5)
+            age = lambda size: np.random.uniform(low=0, high=100, size=size)[0]
+            food_habit = lambda age: 0.5 * age + np.random.normal(loc=10,scale=np.sqrt(10))
+            health = lambda age, food_habit: 0.008*(100 - age**2) + 0.5 * food_habit + np.random.normal(loc=40,scale=np.sqrt(30))
+            mobility = lambda health: 0.5 * health + np.random.normal(loc=20,scale=np.sqrt(10))
 
         self.equations = {
             'A': age,
@@ -43,6 +45,9 @@ class SCM_Health():
         if domains:
             print("Domains set manually.")
         self.intervention = None
+        self.intervention_range = None
+
+        self.discrete = discrete
 
     def create_data_sample(self, sample_size, domains=True):
 
@@ -53,7 +58,7 @@ class SCM_Health():
 
         data = {'A': As, 'F': Fs, 'H': Hs, 'M': Ms}
 
-        if domains:
+        if domains and self.discrete:
             domain = lambda N, x: np.unique(data[x]) if N >= 1000 else None
             dA = domain(sample_size, 'A')
             dF = domain(sample_size, 'F')
@@ -75,13 +80,20 @@ class SCM_Health():
         perform a uniform intervention on a single node
         """
 
-        if intervention is not None:
+        if intervention is not None and self.discrete:
             if self.domains[intervention] is None:
                 print("Please specify the domain!")
                 return False
             self.equations[intervention] = lambda *args: np.random.choice(self.domains[intervention])
             print("Performed Uniform Intervention do({}=U({}))".format(intervention,intervention))
             self.intervention = intervention
+        elif intervention is not None and not self.discrete:
+            low=0
+            high=100
+            self.equations[intervention] = lambda *args: np.random.uniform(low,high)
+            print("Performed Uniform Intervention do({}=U({},{}))".format(intervention,low,high))
+            self.intervention = intervention
+            self.intervention_range = (low, high)
         elif intervention is None:
             pass
 
@@ -89,7 +101,7 @@ class SCM_Health():
 parameters
 """
 
-discrete = True
+discrete = False
 
 interventions = [
     (None, "None"),
@@ -102,9 +114,9 @@ interventions = [
 domains = {}
 
 np.random.seed(0)
-N = 100000
+N = 1000
 
-dir_save = "datasets/data_for_uniform_interventions" # from causal-spn base folder
+dir_save = "datasets/data_for_uniform_interventions_continuous" # from causal-spn base folder
 save = True
 
 """
@@ -115,50 +127,54 @@ for interv in interventions:
     interv, interv_desc = interv
 
     if not discrete: # then continuous
-        # TODO: continuous is not being used, but if, it needs adaptation
 
         # create a dataset
-        scm = SCM_Health(discrete=False)
+        scm = SCM_Health(discrete=False, domains=domains)
         scm.do(interv)
-        data = scm.create_data_sample(N)
-        print('First 10 samples from a total of {} samples:\n'
+        data = scm.create_data_sample(N, domains=True)
+        for ind_d, d in enumerate(['Age','Food Habits','Health','Mobility']):
+            e = d[0]
+            print('Min {:.2f}\t Max {:.2f}\t Mean {:.2f}\t Median {:.2f}\t STD {:.2f}\t\t - {}'
+                  .format(np.min(data[e]), np.max(data[e]), np.mean(data[e]), np.median(data[e]), np.std(data[e]), d))
+        print('(Continuous) First 10 samples from a total of {} samples:\n'
               '\tAge         = {}\n'
               '\tFood Habits = {}\n'
               '\tHealth      = {}\n'
-              '\tMobility    = {}'.format(N, data['A'][:10], data['F'][:10], data['H'][:10], data['M'][:10]))
+              '\tMobility    = {}'
+              '\n\n***********************************\n\n'.format(N,
+                                                               data['A'][:10],
+                                                               data['F'][:10],
+                                                               data['H'][:10],
+                                                               data['M'][:10]))
 
-        # plot a heatmap of Health in sample w.r.t. Age and Food Habits (direct causal parents)
-        plt.figure(figsize=(12,3))
-        plt.scatter(data['A'], data['F'], c=data['H'])
-        plt.colorbar()
-        plt.title('Intervention: {}\nHealth $H$ sampled for {} Persons via SCM'.format(interv, N))
-        plt.xlabel('Age $A$')
-        plt.ylabel('Food Habits $F$')
+        # plot the median health per age group
+        plt.figure(figsize=(12,7))
+        for v in ['Food Habits','Health','Mobility']:
+            median_var_per_age = []
+            mean_var_per_age = []
+            std_var_per_age = []
+            age_intervals = [(0, 10), (10, 30), (30, 55), (55, 75), (75, 100)]
+            for a in age_intervals:
+                indices = np.where(np.logical_and(data['A'] > a[0],data['A'] < a[1]))[0]
+                corresponding_var_data = [data[v[0]][i] for i in indices]
+                median_var = np.median(corresponding_var_data)
+                mean_var = np.mean(corresponding_var_data)
+                std_var = np.std(corresponding_var_data)
+                median_var_per_age.append(median_var)
+                mean_var_per_age.append(mean_var)
+                std_var_per_age.append(std_var)
+
+            #plt.plot(range(len(age_intervals)), median_var_per_age, label='Median',)
+            e = v[0]
+            p = plt.plot(range(len(age_intervals)), mean_var_per_age, label='{} |All Data {:.1f}, {:.1f}, {:.1f}|'.format(v,np.mean(data[e]), np.min(data[e]), np.max(data[e])))
+            plt.errorbar(range(len(age_intervals)), mean_var_per_age, yerr=std_var_per_age, color=p[0].get_color())
+            plt.title('Intervention: {} {}\nContinuous Data Mean Values per Age intervals x<a<y (Sampled {} Persons via SCM)\nVariable Name |All Data Mean, Min, Max|'.format(interv_desc, scm.intervention_range,N))
+            plt.xlabel('Age $A$')
+            plt.ylabel('Mean for Variable in Interval')
+            plt.xticks(range(len(age_intervals)), [str(x) for x in age_intervals])
+        plt.ylim(-10,70)
+        plt.legend(bbox_to_anchor=[0.5, -0.11], loc='center', ncol=3)
         axes = plt.gca()
-        axes.set_xlim([18-1,80+1])
-        axes.set_yticks([0,1])
-        plt.show()
-
-        # plot the mean health per age group
-        mean_health_per_age = []
-        std_health_per_age = []
-        for a in range(18,80+1):
-            indices = np.where(data['A'] == a)[0]
-            corresponding_health_data = [data['H'][ind] for ind in indices]
-            mean_health = np.mean(corresponding_health_data)
-            std_health = np.std(corresponding_health_data)
-            mean_health_per_age.append(mean_health)
-            std_health_per_age.append(std_health)
-
-        plt.figure(figsize=(12,6))
-        plt.plot(range(18,80+1), mean_health_per_age)
-        plt.errorbar(range(18,80+1), mean_health_per_age, yerr=std_health_per_age)
-        plt.title('Mean Health $H$ per Age group $A$ (Sampled {} Persons via SCM)'.format(N))
-        plt.xlabel('Age $A$')
-        plt.ylabel('Health $H$')
-        axes = plt.gca()
-        axes.set_xlim([18-1,80+1])
-        axes.set_ylim([0,1])
         plt.show()
 
     else:
@@ -217,8 +233,9 @@ for interv in interventions:
         if not os.path.exists(dir_save):
             os.makedirs(dir_save)
             print("Created directory: {}".format(dir_save))
+        type = 'discrete' if discrete else 'continuous'
         save_location = os.path.join(dir_save,
-                               'causal_health_toy_data_discrete_intervention_{}_100k.pkl'.format(interv_desc))
+                               'causal_health_toy_data_{}_intervention_{}_N{}.pkl'.format(type, interv_desc,N))
         with open(save_location,'wb') as f:
             pickle.dump(data, f)
             print("Saved Data @ {}".format(save_location))
