@@ -114,10 +114,10 @@ interventions = [
 domains = {}
 
 np.random.seed(0)
-N = 1000
+N = 100000
 
 dir_save = "datasets/data_for_uniform_interventions_continuous" # from causal-spn base folder
-save = True
+save = False
 
 """
 simulate SCMs
@@ -175,6 +175,14 @@ for interv in interventions:
         plt.ylim(-10,70)
         plt.legend(bbox_to_anchor=[0.5, -0.11], loc='center', ncol=3)
         axes = plt.gca()
+        plt.show()
+        fig, axs = plt.subplots(2,2,figsize=(12,10))
+        colors = ['black', 'blue','orange','green']
+        for ind_d, d in enumerate(['Age', 'Food Habits', 'Health', 'Mobility']):
+            axs.flatten()[ind_d].hist(data[d[0]],bins=50, color=colors[ind_d])
+            axs.flatten()[ind_d].set_title('{}'.format(d))
+            axs.flatten()[ind_d].set_xlim(-20,100)
+        plt.suptitle('Intervention: {} {}\nHistograms for {} Samples (x: Value, y: Frequency)'.format(interv_desc, scm.intervention_range,N))
         plt.show()
 
     else:
