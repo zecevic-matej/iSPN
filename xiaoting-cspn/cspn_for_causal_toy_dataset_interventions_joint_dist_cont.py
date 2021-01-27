@@ -4,22 +4,65 @@ import region_graph
 import model
 from main import Config, CspnTrainer
 import pickle
-import itertools
+import os
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_theme()
 np.set_printoptions(suppress=True)
 
+def get_graph_for_intervention(intervention):
+    if intervention == 'None':
+        # A->F, A->H, F->H, H->M
+        g = np.array([[0, 1, 1, 0],
+                      [0, 0, 1, 0],
+                      [0, 0, 0, 1],
+                      [0, 0, 0, 0]])
+    elif intervention == 'do(H)=U(H)':
+        # A->F, A-/->H, F-/->H, H->M
+        g = np.array([[0, 1, 0, 0],
+                      [0, 0, 0, 0],
+                      [0, 0, 0, 1],
+                      [0, 0, 0, 0]])
+    elif 'do(F)' in intervention:
+        # A-/->F, A->H, F->H, H->M
+        g = np.array([[0, 0, 1, 0],
+                      [0, 0, 1, 0],
+                      [0, 0, 0, 1],
+                      [0, 0, 0, 0]])
+    elif "do(A)" in intervention:
+        # A->F, A->H, F->H, H->M
+        g = np.array([[0, 1, 1, 0],
+                      [0, 0, 1, 0],
+                      [0, 0, 0, 1],
+                      [0, 0, 0, 0]])
+    elif "do(M)" in intervention:
+        # A->F, A->H, F->H, H-/->M
+        g = np.array([[0, 1, 1, 0],
+                      [0, 0, 1, 0],
+                      [0, 0, 0, 0],
+                      [0, 0, 0, 0]])
+    g = g.flatten()
+    return g
+
 class CausalDataset():
-    def __init__(self):
+    def __init__(self, batch_size):
         """
         train_y/test_y are (num_samples, num_vars) matrix
         """
-        path_datasets = [
-            '../datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_do(F)=N(-5,0.1)_N100000.pkl',#causal_health_toy_data_continuous_intervention_None_N100000.pkl',
-                         ]
+        path_datasets = ("../datasets/data_for_uniform_interventions_continuous/",
+            [
+                #'causal_health_toy_data_continuous_intervention_do(F)=N(-5,0.1)_N100000.pkl',
+                #'causal_health_toy_data_continuous_intervention_do(F)=N(-5,0.1)_N1000.pkl',
+                'causal_health_toy_data_continuous_intervention_None_N100000.pkl',
+                'causal_health_toy_data_continuous_intervention_do(A)=U(A)_N100000.pkl',
+                'causal_health_toy_data_continuous_intervention_do(F)=U(F)_N100000.pkl',
+                'causal_health_toy_data_continuous_intervention_do(H)=U(H)_N100000.pkl',
+                'causal_health_toy_data_continuous_intervention_do(M)=U(M)_N100000.pkl',
+                #'causal_health_toy_data_continuous_intervention_do(F)=U(F)_N1000.pkl',
+                         ])
+        path_datasets = [os.path.join(path_datasets[0], p) for p in path_datasets[1]]
+        self.intervention = []
         ys_all = []
         xs_all = []
         for path_data in path_datasets: # collect per intervention
@@ -28,25 +71,8 @@ class CausalDataset():
             self.data = data
             ys = np.vstack((data['A'],data['F'],data['H'],data['M'])).T
             intervention = path_data.split('intervention_')[1].split('_')[0]
-            if intervention == 'None':
-                # A->F, A->H, F->H, H->M
-                g = np.array([[0,1,1,0],
-                              [0,0,1,0],
-                              [0,0,0,1],
-                              [0,0,0,0]])
-            elif intervention == 'do(H)=U(H)':
-                # A->F, A-/->H, F-/->H, H->M
-                g = np.array([[0,1,0,0],
-                              [0,0,0,0],
-                              [0,0,0,1],
-                              [0,0,0,0]])
-            elif 'do(F)' in intervention:
-                # A-/->F, A->H, F->H, H->M
-                g = np.array([[0,0,1,0],
-                              [0,0,1,0],
-                              [0,0,0,1],
-                              [0,0,0,0]])
-            g.flatten()
+            g = get_graph_for_intervention(intervention)
+            self.intervention.append(intervention)
             xs = np.tile(g.flatten()[:,np.newaxis],len(ys)).T
             xs_all.append(xs)
             ys_all.append(ys)
@@ -54,19 +80,19 @@ class CausalDataset():
         random_sorting = np.random.permutation(sum([x.shape[0] for x in xs_all]))
         xs_all = np.vstack(xs_all)[random_sorting]
         ys_all = np.vstack(ys_all)[random_sorting]
-        test_leftout = 1000
+        test_leftout = int(0.15 * len(random_sorting))
+        assert(test_leftout <= len(random_sorting) * 0.2 and test_leftout > batch_size)
         self.train_x = xs_all[:len(random_sorting)-test_leftout,:]
         self.test_x = xs_all[len(random_sorting)-test_leftout:,:]
         self.train_y = ys_all[:len(random_sorting)-test_leftout,:]
         self.test_y = ys_all[len(random_sorting)-test_leftout:,:]
-        self.intervention = intervention
         #import pdb; pdb.set_trace()
 
 with tf.device('/GPU:0'):
     conf = Config()
     conf.model_name = 'cspn'
-    conf.num_epochs = 130#200
-    conf.batch_size = 1000#128
+    conf.num_epochs = 130
+    conf.batch_size = 1000
 
     batch_size = conf.batch_size
     x_shape = (batch_size, 16)
@@ -95,7 +121,7 @@ with tf.device('/GPU:0'):
     spn = RAT_SPN.RatSpn(num_classes=1, region_graph=rg, name="spn", args=args)
     print("TOTAL", spn.num_params())
 
-    dataset = CausalDataset()
+    dataset = CausalDataset(batch_size)
 
     sess = tf.Session(config=tf.ConfigProto(
         allow_soft_placement=True, log_device_placement=False))
@@ -116,19 +142,22 @@ with tf.device('/GPU:0'):
     mpe = trainer.spn.reconstruct_batch(feed_dict, trainer.sess, sample=sample)
     print('****************\nMost Probable Explanation: (with Sample={})\n{}'.format(sample,mpe))
 
+    save_loss = False
     plt.plot(range(len(loss_curve)), loss_curve)
     plt.title('Intervention: {}\nTraining Gaussian CSPN on Causal Health (Cont.) with {} Samples'.format(dataset.intervention, len(dataset.train_x)))
     plt.ylabel('Log-Likelihood')
     plt.xlabel('Epoch #')
-    plt.show()
+    if save_loss:
+        plt.show()
 
 
-    def compute_pdf(dim, N, low, high, visualize=False, dd=None, comment=None):
+    def compute_pdf(dim, N, low, high, intervention, visualize=False, dd=None, comment=None):
+        g = get_graph_for_intervention(intervention)
         y_batch = np.zeros((N,4))
         y_batch[:,dim] = np.linspace(low,high,N)
         marginalized = np.ones((N,4))
         marginalized[:,dim] = 0. # seemingly one sets the desired dim to 0
-        x_batch = dataset.train_x[:N]
+        x_batch = np.tile(g,(N,1))#dataset.train_x[:N]
         feed_dict = {trainer.x_ph: x_batch,
                      trainer.y_ph: y_batch,
                      trainer.marginalized: marginalized,
@@ -199,25 +228,37 @@ with tf.device('/GPU:0'):
     # # computation
     # pdf_vals = compute_pdf(dim,N,low,high,visualize=True,dd=dd,comment=comment)
 
-    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
     colors = ['pink', 'blue', 'orange', 'lightgreen']
-    N = 1000
+    N = batch_size
     low=-20
     high=100
-    interv_desc = "do(F=N(-5,0.1))"
-    for ind_d, d in enumerate(['Age', 'Food Habits', 'Health', 'Mobility']):
-        # gt distribution
-        hist_data = dataset.data[d[0]]
-        weights = np.ones_like(hist_data)/len(hist_data)
-        h = axs.flatten()[ind_d].hist(hist_data, color=colors[ind_d], label="GT", weights=weights, edgecolor=colors[ind_d])
-        axs.flatten()[ind_d].set_title('{}'.format(d))
-        axs.flatten()[ind_d].set_xlim(low, high)
-        # mpe
-        xc = np.round(mpe[0,ind_d], decimals=1)
-        axs.flatten()[ind_d].axvline(x=xc, label='CSPN Max = {}'.format(xc), c='red')
-        # pdf
-        vals_x, vals_pdf = compute_pdf(ind_d, N, low, high, visualize=False)
-        axs.flatten()[ind_d].plot(vals_x, vals_pdf, label="CSPN learned PDF", color="black", linestyle='solid', linewidth=1.5)
-        axs.flatten()[ind_d].legend(prop={'size':9})
-    plt.suptitle('Intervention: {}, sampled {} steps over({},{}), hist_n_bins={}, Train LL {}'.format(interv_desc,N,low,high, len(h[0]), np.round(loss_curve[-1],decimals=2)))
-    plt.show()
+    save_dir="iSPN_trained_uniform_interventions/"
+    for interv_desc in dataset.intervention:
+        fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+        # sampling density #plt.plot(np.linspace(low,high,N),np.zeros(N), marker="o"); plt.show()
+        pp = '../datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_{}_N100000.pkl'.format(interv_desc)
+        ppN = int(pp.split("_N")[1].split(".pkl")[0]) if interv_desc != "None" else int(pp.split("None")[1].split("_N")[1].split(".pkl")[0])
+        comment = "Histograms on {} K samples, Training on {} K samples".format(np.round(ppN/ 1000,decimals=1), np.round(dataset.train_x.shape[0] / 1000,decimals=1))
+        with open(pp, "rb") as f:
+            data = pickle.load(f)
+        for ind_d, d in enumerate(['Age', 'Food Habits', 'Health', 'Mobility']):
+            # gt distribution
+            hist_data = data[d[0]]#dataset.data[d[0]]
+            weights = np.ones_like(hist_data)/len(hist_data)
+            h = axs.flatten()[ind_d].hist(hist_data, color=colors[ind_d],bins=15, label="GT", weights=weights, edgecolor=colors[ind_d])
+            axs.flatten()[ind_d].set_title('{}'.format(d))
+            axs.flatten()[ind_d].set_xlim(low, high)
+            # mpe
+            xc = np.round(mpe[0,ind_d], decimals=1)
+            axs.flatten()[ind_d].axvline(x=xc, label='CSPN Max = {}'.format(xc), c='red')
+            # pdf
+            vals_x, vals_pdf = compute_pdf(ind_d, N, low, high, intervention=interv_desc, visualize=False)
+            axs.flatten()[ind_d].plot(vals_x, vals_pdf, label="CSPN learned PDF", color="black", linestyle='solid', linewidth=1.5)
+            axs.flatten()[ind_d].legend(prop={'size':9})
+        plt.suptitle('Intervention: {}, sampled {} steps over({},{}), hist_n_bins={}, Train LL {:.2f}\n{}'.format(interv_desc,N,low,high, len(h[0]), np.round(loss_curve[-1],decimals=2), comment))
+        if save_dir:
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            plt.savefig(os.path.join(save_dir, "iSPN_int_{}.png".format(interv_desc)))
+        else:
+            plt.show()
