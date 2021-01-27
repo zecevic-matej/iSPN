@@ -133,6 +133,19 @@ class ScopeBasedParamProvider:
             idxs[:, i, :, 2] = np.expand_dims(np.arange(cur_used, cur_used + number), 0)
             self.leaf_params_used[dim] += number
         result = tf.gather_nd(self.leaf_params, idxs)
+
+        # effort for multi-dim alternative (categorical compatible)
+        # just the 2-dim case
+        # result = []
+        # idxs = np.zeros((self.batch_size, len(scope), *number, 3), dtype=np.int32)
+        # idxs[..., 0] = np.reshape(np.arange(self.batch_size), (self.batch_size, 1, 1, 1))
+        # for i, dim in enumerate(scope):
+        #     idxs[:, i, :, :, 1] = dim
+        #     cur_used = self.leaf_params_used[dim]
+        #     idxs[:, i, :, :, 2] = np.expand_dims(np.tile(np.arange(number[1]),(number[0],1)), 0)
+        #     self.leaf_params_used[dim] += number[dim]
+        # result = tf.gather_nd(self.leaf_params, idxs)
+
         return result
 
 
@@ -267,7 +280,7 @@ class GaussVector(NodeVector):
 
     def reconstruct(self, max_idxs, node_num, case_num, sample, sess=None, feed_dict=None):
         if sample:
-            my_sample = sess.run(self.dist.sample())[case_num]
+            my_sample = sess.run(self.dist.sample(), feed_dict=feed_dict)[case_num]
         else:
             my_sample = self.np_means[case_num]
             # my_sample = sess.run(self.means)
@@ -438,8 +451,8 @@ class ProductVector(NodeVector):
     def reconstruct(self, max_idxs, node_num, case_num, sample, sess=None, feed_dict=None):
         row_num = node_num // self.vector1.size
         col_num = node_num % self.vector1.size
-        result1 = self.vector1.reconstruct(max_idxs, col_num, case_num, sample)
-        result2 = self.vector2.reconstruct(max_idxs, row_num, case_num, sample)
+        result1 = self.vector1.reconstruct(max_idxs, col_num, case_num, sample, sess, feed_dict)
+        result2 = self.vector2.reconstruct(max_idxs, row_num, case_num, sample, sess, feed_dict)
         return result1 + result2
 
 
@@ -515,7 +528,7 @@ class SumVector(NodeVector):
         my_max_idx = max_idxs[self.name][case_num, node_num]
         for inp_vector in self.inputs:
             if my_max_idx < inp_vector.size:
-                return inp_vector.reconstruct(max_idxs, my_max_idx, case_num, sample)
+                return inp_vector.reconstruct(max_idxs, my_max_idx, case_num, sample, sess, feed_dict)
             my_max_idx -= inp_vector.size
 
     def sample(self, inputs, seed=None, differentiable=False):
@@ -809,6 +822,21 @@ class RatSpn(object):
         #recons = np.clip(recons, 0.0, 1.0)
         #import pdb; pdb.set_trace()
         return recons
+
+    # def reconstruct_batch_tf(self, batch_size, sample=False):
+    #     max_idx_tensors_relaxed = {}
+    #     for layer in self.vector_list:
+    #         for vector in layer:
+    #             if isinstance(vector, SumVector):
+    #                 #max_idx_tensors[vector.name] = vector.max_child_idx
+    #                 #max_idx_tensors_relaxed[vector.name] = vector.sample_child_idx_relaxed
+    #                 max_idx_tensors_relaxed[vector.name] = None
+    #
+    #     recons = self.output_vector.reconstruct_tf(max_idx_tensors_relaxed, 0, 0, sample)
+    #     recons = tf.reduce_sum(tf.cast(tf.stack(recons, axis=0), tf.float32) * tf.cast((1/tf.shape(recons)[-1]), tf.float32), axis=-1)
+    #     # recons = tf.reduce_sum(tf.stack(recons, axis=0) * (1/tf.cast(tf.shape(recons)[-1], tf.float32)), axis=-1)
+    #     # recons = tf.clip_by_value(recons, 0.0, 1.0)   # when outputing latent code, do not clip!
+    #     return recons
 
 
     def reconstruct(self, max_idxs, case_num, sample, sess, feed_dict):

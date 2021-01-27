@@ -105,10 +105,10 @@ discrete = False
 
 interventions = [
     (None, "None"),
-    ("H","do(H)=U(H)"),
-    ("M","do(M)=U(M)"),
-    ("A","do(A)=U(A)"),
-    ("F","do(F)=U(F)"),
+    # ("H","do(H)=U(H)"),
+    # ("M","do(M)=U(M)"),
+    # ("A","do(A)=U(A)"),
+    # ("F","do(F)=U(F)"),
 ]
 
 domains = {}
@@ -117,7 +117,7 @@ np.random.seed(0)
 N = 100000
 
 dir_save = "datasets/data_for_uniform_interventions_continuous" # from causal-spn base folder
-save = False
+save = True
 
 """
 simulate SCMs
@@ -178,10 +178,18 @@ for interv in interventions:
         plt.show()
         fig, axs = plt.subplots(2,2,figsize=(12,10))
         colors = ['black', 'blue','orange','green']
+        mpe_from_cspn = [16.411, -4.988, 35.108, 38.542] # direct mpe (F=N(-5,0.1)): [ 83.261,  -4.996, -29.853,  17.126] #None #[12.429, 15.514, 48.225, 45.442] # mean from 128 samples: [12.621, 15.624, 48.337, 45.647]
         for ind_d, d in enumerate(['Age', 'Food Habits', 'Health', 'Mobility']):
             axs.flatten()[ind_d].hist(data[d[0]],bins=50, color=colors[ind_d])
             axs.flatten()[ind_d].set_title('{}'.format(d))
             axs.flatten()[ind_d].set_xlim(-20,100)
+            if mpe_from_cspn is not None:
+                xc = np.round(mpe_from_cspn[ind_d], decimals=1)
+                make_int = False
+                if make_int:
+                    xc = int(xc)
+                axs.flatten()[ind_d].axvline(x=xc, label='CSPN Max = {}'.format(xc), c='red')
+                axs.flatten()[ind_d].legend()
         plt.suptitle('Intervention: {} {}\nHistograms for {} Samples (x: Value, y: Frequency)'.format(interv_desc, scm.intervention_range,N))
         plt.show()
 

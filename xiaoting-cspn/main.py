@@ -114,6 +114,7 @@ class CspnTrainer:
     def run_training(self, no_save=False, each_iter=False):
         batch_size = self.conf.batch_size
         batches_per_epoch = self.data.train_y.shape[0] // batch_size
+        loss_curve = []
         for i in range(self.conf.num_epochs):
             for j in range(batches_per_epoch):
                 x_batch = self.data.train_x[j * batch_size : (j + 1) * batch_size, :]
@@ -127,22 +128,25 @@ class CspnTrainer:
                     [self.train_op, self.spn_output, self.loss], feed_dict=feed_dict)
 
                 if j % 100 == 0:
-                    print('ep. {}, batch {}, train ll {:.2f}'.format(i, j, -cur_loss))
-                    mpe = self.spn.reconstruct_batch(feed_dict, self.sess)
+                    print('ep. {}, batch {}, train ll {:.2f}                  '.format(i, j, -cur_loss), end='\r', flush=True)
+                    loss_curve.append(-cur_loss)
                     # TODO: below is just a copy of what is used at the end of example_script.py - maybe combine into one
-                    if len(y_batch.shape) == 2:
-                        dims = y_batch.shape[1]
-                    else:
-                        dims = 1
-                    result = np.hstack((y_batch, mpe))
-                    if "Gauss" in str(self.spn.vector_list[0][0]):
-                        result = np.round(result)
-                    print("Train Batch Hits: {}".format(((result[:, :dims] == result[:, dims:dims+dims]).all(axis=1)).sum()))
-                    if dims > 1:
-                        for i in range(dims):
-                            hits = ((result[:, i:i + 1] == result[:, dims + i:dims + i + 1]).all(axis=1)).sum()
-                            acc = 100 * (hits / len(y_batch))
-                            print('Dimension {} accuracy is {}% ({}/{})'.format(i, acc, hits, len(y_batch)))
+                    show_immediate_success = False
+                    if show_immediate_success:
+                        mpe = self.spn.reconstruct_batch(feed_dict, self.sess)
+                        if len(y_batch.shape) == 2:
+                            dims = y_batch.shape[1]
+                        else:
+                            dims = 1
+                        result = np.hstack((y_batch, mpe))
+                        if "Gauss" in str(self.spn.vector_list[0][0]):
+                            result = np.round(result)
+                        print("Train Batch Hits: {}".format(((result[:, :dims] == result[:, dims:dims+dims]).all(axis=1)).sum()))
+                        if dims > 1:
+                            for i in range(dims):
+                                hits = ((result[:, i:i + 1] == result[:, dims + i:dims + i + 1]).all(axis=1)).sum()
+                                acc = 100 * (hits / len(y_batch))
+                                print('Dimension {} accuracy is {}% ({}/{})'.format(i, acc, hits, len(y_batch)))
                     #import pdb;pdb.set_trace()
                     # self.validate(i, j, -cur_loss)
                     # mpe = data.merge_data(data.test_x[:batch_size], mpe)[..., 0]
@@ -156,6 +160,8 @@ class CspnTrainer:
             if i % 2 == 1 and not no_save or each_iter:
                 self.saver.save(self.sess, self.conf.ckpt_dir)
                 print('Parameters saved')
+
+        return loss_curve
 
     def validate(self, epoch, iteration, train_ll):
         batch_size = self.conf.batch_size
