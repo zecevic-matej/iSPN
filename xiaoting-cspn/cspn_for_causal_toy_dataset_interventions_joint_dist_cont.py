@@ -128,7 +128,7 @@ with tf.device('/GPU:0'):
     #################################################################
 
     # parameters to be adapted
-    conf.num_epochs = 10 # Causal Health: 130
+    conf.num_epochs = 20 # Causal Health: 130
     conf.batch_size = 100 # Causal Health: 1000
     num_sum_weights = 2400 # Causal Health: 600
     num_leaf_weights = 96 # Causal Health: 12
@@ -269,12 +269,13 @@ with tf.device('/GPU:0'):
 
     colors = ['pink', 'blue', 'orange', 'lightgreen', 'yellow', 'red', 'cyan', 'purple'] # ASSUMES: NEVER more than 8 variables
     N = batch_size
+    list_vars_per_interv = [dataset.data[i]['data'].columns for i in range(len(dataset.intervention))]
     for ind, interv_desc in enumerate(dataset.intervention):
         fig, axs = plt.subplots(2, 4, figsize=(12, 10))
         if bnl_dataset:
             comment = ''
             data = dataset.data[ind]['data']
-            variables = dataset.data[ind]['data'].columns
+            variables = list_vars_per_interv[0] # assumes that all datasets have the same variables, makes sure that ordering is consistent
         else:
             print('Assuming Causal Health Datset.')
             pp = '../datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_{}_N100000.pkl'.format(interv_desc)
@@ -297,7 +298,7 @@ with tf.device('/GPU:0'):
             xc = np.round(mpe[0,ind_d], decimals=1)
             axs.flatten()[ind_d].axvline(x=xc, label='CSPN Max = {}'.format(xc), c='red')
             # pdf
-            vals_x, vals_pdf = compute_pdf(ind_d, N, low, high, intervention=interv_desc, visualize=False)
+            vals_x, vals_pdf = compute_pdf(list_vars_per_interv[ind].tolist().index(d), N, low, high, intervention=interv_desc, visualize=False)
             axs.flatten()[ind_d].plot(vals_x, vals_pdf, label="CSPN learned PDF", color="black", linestyle='solid', linewidth=1.5)
             axs.flatten()[ind_d].legend(prop={'size':9})
         plt.suptitle('Intervention: {}, sampled {} steps over({},{}), hist_n_bins={}, Train LL {:.2f}\n{}'.format(interv_desc,N,low,high, len(h[0]), np.round(loss_curve[-1],decimals=2), comment))
