@@ -68,7 +68,7 @@ def build_nn_mnist(inp, output_shape, training, num_sum_weights, num_leaf_weight
 
     if int(inp.shape[-2]) == 28:
         features = build_mnist_conv_layers(inp, training)
-    elif int(inp.shape[1]) == 1 or int(inp.shape[1]) == 16:
+    elif int(inp.shape[1]) == 1 or int(inp.shape[1]) == 16 or int(inp.shape[1]) == 64:
         # TODO: correct this 'stupid' criterion
         features = build_simple_mlp(inp, training)
     else:

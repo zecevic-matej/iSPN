@@ -11,7 +11,10 @@ import seaborn as sns
 sns.set_theme()
 np.set_printoptions(suppress=True)
 
-def get_graph_for_intervention(intervention):
+def get_graph_for_intervention_CHD(intervention):
+    """
+    for the causal health dataset. get graph according to intervention.
+    """
     if intervention == 'None':
         # A->F, A->H, F->H, H->M
         g = np.array([[0, 1, 1, 0],
@@ -45,7 +48,7 @@ def get_graph_for_intervention(intervention):
     g = g.flatten()
     return g
 
-class CausalDataset():
+class CausalHealthDataset():
     def __init__(self, batch_size):
         """
         train_y/test_y are (num_samples, num_vars) matrix
@@ -71,7 +74,7 @@ class CausalDataset():
             self.data = data
             ys = np.vstack((data['A'],data['F'],data['H'],data['M'])).T
             intervention = path_data.split('intervention_')[1].split('_')[0]
-            g = get_graph_for_intervention(intervention)
+            g = get_graph_for_intervention_CHD(intervention)
             self.intervention.append(intervention)
             xs = np.tile(g.flatten()[:,np.newaxis],len(ys)).T
             xs_all.append(xs)
@@ -86,25 +89,55 @@ class CausalDataset():
         self.test_x = xs_all[len(random_sorting)-test_leftout:,:]
         self.train_y = ys_all[:len(random_sorting)-test_leftout,:]
         self.test_y = ys_all[len(random_sorting)-test_leftout:,:]
+        self.description = 'Causal Health (Cont.)'
         #import pdb; pdb.set_trace()
+
+class BnLearnDataset():
+    def __init__(self, bif, batch_size):
+        p = '../datasets/other/benchmark_data_for_uniform_interventions/{}_uniform_interventions_N10000.pkl'.format(bif)
+        with open(p, "rb") as f:
+            data = pickle.load(f)
+        self.data = data
+        self.intervention = []
+        ys_all = []
+        xs_all = []
+        for ind, dict_interv in enumerate(self.data):
+            interv = dict_interv['interv']
+            self.intervention.append(interv)
+            ys = np.array(dict_interv['data'])
+            g = np.array(dict_interv['adjmat'],dtype=float).flatten()
+            xs = np.tile(g.flatten()[:, np.newaxis], len(ys)).T
+            xs_all.append(xs)
+            ys_all.append(ys)
+        np.random.seed(0)
+        random_sorting = np.random.permutation(sum([x.shape[0] for x in xs_all]))
+        xs_all = np.vstack(xs_all)[random_sorting]
+        ys_all = np.vstack(ys_all)[random_sorting]
+        test_leftout = int(0.15 * len(random_sorting))
+        assert(test_leftout <= len(random_sorting) * 0.2 and test_leftout > batch_size)
+        self.train_x = xs_all[:len(random_sorting)-test_leftout,:]
+        self.test_x = xs_all[len(random_sorting)-test_leftout:,:]
+        self.train_y = ys_all[:len(random_sorting)-test_leftout,:]
+        self.test_y = ys_all[len(random_sorting)-test_leftout:,:]
+        self.description = 'ASIA (bnlearn, Bernoulli)'
 
 with tf.device('/GPU:0'):
     conf = Config()
     conf.model_name = 'cspn'
-    conf.num_epochs = 130
-    conf.batch_size = 1000
+    conf.num_epochs = 10#130
+    conf.batch_size = 100#1000
 
+    x_dims = 64#16
+    y_dims = 8#4
     batch_size = conf.batch_size
-    x_shape = (batch_size, 16)
-    y_shape = (batch_size, 4)
-    x_dims = 16
-    y_dims = 4
+    x_shape = (batch_size, x_dims)
+    y_shape = (batch_size, y_dims)
 
     x_ph = tf.placeholder(tf.float32, x_shape)
     train_ph = tf.placeholder(tf.bool)
 
     # generate parameters for spn
-    sum_weights, leaf_weights = model.build_nn_mnist(x_ph, y_shape, train_ph, 600, 12)
+    sum_weights, leaf_weights = model.build_nn_mnist(x_ph, y_shape, train_ph, 2400,96)#600, 12)
     param_provider = RAT_SPN.ScopeBasedParamProvider(sum_weights, leaf_weights)
 
     # build spn graph
@@ -121,7 +154,8 @@ with tf.device('/GPU:0'):
     spn = RAT_SPN.RatSpn(num_classes=1, region_graph=rg, name="spn", args=args)
     print("TOTAL", spn.num_params())
 
-    dataset = CausalDataset(batch_size)
+    #dataset = CausalHealthDataset(batch_size)
+    dataset = BnLearnDataset('asia', batch_size)
 
     sess = tf.Session(config=tf.ConfigProto(
         allow_soft_placement=True, log_device_placement=False))
@@ -142,20 +176,20 @@ with tf.device('/GPU:0'):
     mpe = trainer.spn.reconstruct_batch(feed_dict, trainer.sess, sample=sample)
     print('****************\nMost Probable Explanation: (with Sample={})\n{}'.format(sample,mpe))
 
-    save_loss = False
     plt.plot(range(len(loss_curve)), loss_curve)
-    plt.title('Intervention: {}\nTraining Gaussian CSPN on Causal Health (Cont.) with {} Samples'.format(dataset.intervention, len(dataset.train_x)))
+    plt.title('Intervention: {}\nTraining Gaussian CSPN on {} with {} Samples'.format(dataset.intervention, dataset.description, len(dataset.train_x)))
     plt.ylabel('Log-Likelihood')
-    plt.xlabel('Epoch #')
-    if save_loss:
-        plt.show()
+    plt.xlabel('Batch #')
+    plt.show()
 
 
     def compute_pdf(dim, N, low, high, intervention, visualize=False, dd=None, comment=None):
-        g = get_graph_for_intervention(intervention)
-        y_batch = np.zeros((N,4))
+        #g = get_graph_for_intervention_CHD(intervention)
+        dict_interv = next(item for item in dataset.data if item["interv"] == intervention)
+        g = np.array(dict_interv['adjmat'],dtype=float).flatten()
+        y_batch = np.zeros((N,8))#4))
         y_batch[:,dim] = np.linspace(low,high,N)
-        marginalized = np.ones((N,4))
+        marginalized = np.ones((N,8))#4))
         marginalized[:,dim] = 0. # seemingly one sets the desired dim to 0
         x_batch = np.tile(g,(N,1))#dataset.train_x[:N]
         feed_dict = {trainer.x_ph: x_batch,
@@ -228,24 +262,25 @@ with tf.device('/GPU:0'):
     # # computation
     # pdf_vals = compute_pdf(dim,N,low,high,visualize=True,dd=dd,comment=comment)
 
-    colors = ['pink', 'blue', 'orange', 'lightgreen']
+    colors = ['pink', 'blue', 'orange', 'lightgreen', 'yellow', 'red', 'cyan', 'purple']
     N = batch_size
-    low=-20
-    high=100
-    save_dir="iSPN_trained_uniform_interventions/"
-    for interv_desc in dataset.intervention:
-        fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+    low=-0.5#-20
+    high=1.5#100
+    save_dir="iSPN_trained_uniform_interventions_ASIA/"
+    for ind, interv_desc in enumerate(dataset.intervention):
+        fig, axs = plt.subplots(2, 4, figsize=(12, 10))
         # sampling density #plt.plot(np.linspace(low,high,N),np.zeros(N), marker="o"); plt.show()
-        pp = '../datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_{}_N100000.pkl'.format(interv_desc)
-        ppN = int(pp.split("_N")[1].split(".pkl")[0]) if interv_desc != "None" else int(pp.split("None")[1].split("_N")[1].split(".pkl")[0])
-        comment = "Histograms on {} K samples, Training on {} K samples".format(np.round(ppN/ 1000,decimals=1), np.round(dataset.train_x.shape[0] / 1000,decimals=1))
-        with open(pp, "rb") as f:
-            data = pickle.load(f)
-        for ind_d, d in enumerate(['Age', 'Food Habits', 'Health', 'Mobility']):
+        #pp = '../datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_{}_N100000.pkl'.format(interv_desc)
+        #ppN = int(pp.split("_N")[1].split(".pkl")[0]) if interv_desc != "None" else int(pp.split("None")[1].split("_N")[1].split(".pkl")[0])
+        comment = ''#"Histograms on {} K samples, Training on {} K samples".format(np.round(ppN/ 1000,decimals=1), np.round(dataset.train_x.shape[0] / 1000,decimals=1))
+        #with open(pp, "rb") as f:
+        #    data = pickle.load(f)
+        data = dataset.data[ind]['data']
+        for ind_d, d in enumerate(dataset.data[ind]['data'].columns):#['Age', 'Food Habits', 'Health', 'Mobility']):
             # gt distribution
-            hist_data = data[d[0]]#dataset.data[d[0]]
+            hist_data = data[d]#dataset.data[d[0]]
             weights = np.ones_like(hist_data)/len(hist_data)
-            h = axs.flatten()[ind_d].hist(hist_data, color=colors[ind_d],bins=15, label="GT", weights=weights, edgecolor=colors[ind_d])
+            h = axs.flatten()[ind_d].hist(hist_data, color=colors[ind_d], label="GT", weights=weights, edgecolor=colors[ind_d])
             axs.flatten()[ind_d].set_title('{}'.format(d))
             axs.flatten()[ind_d].set_xlim(low, high)
             # mpe
