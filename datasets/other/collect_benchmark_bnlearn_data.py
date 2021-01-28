@@ -6,12 +6,17 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_theme()
 
+# RUN THIS FILE FROM WITHIN THE datasets/other/ directory
+# ALWAYS VALIDATE THE RESULTING (INTERVENTIONAL) GRAPHS AND OVERALL DATA
+# although correctness by now is assumed to be asserted
+
 # general parameters
-bif_file = 'asia.bif'
+# check out https://www.bnlearn.com/bnrepository/discrete-small.html#asia
+bif_file = 'earthquake.bif' #'asia.bif' # available are: earthquake, cancer, sachs, survey
 visualize_immediate = False
 visualize_final = True
 N = 10000
-interventions = ['tub','lung','either','dysp']
+interventions = ['Earthquake','Alarm','MaryCalls'] # asia example: ['tub','lung','either','dysp']
 save_dir = 'benchmark_data_for_uniform_interventions/'
 
 # load model

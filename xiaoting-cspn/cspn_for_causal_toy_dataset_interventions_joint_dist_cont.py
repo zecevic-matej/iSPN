@@ -93,7 +93,7 @@ class CausalHealthDataset():
         #import pdb; pdb.set_trace()
 
 class BnLearnDataset():
-    def __init__(self, bif, batch_size):
+    def __init__(self, bif, batch_size, description):
         p = '../datasets/other/benchmark_data_for_uniform_interventions/{}_uniform_interventions_N10000.pkl'.format(bif)
         with open(p, "rb") as f:
             data = pickle.load(f)
@@ -119,16 +119,33 @@ class BnLearnDataset():
         self.test_x = xs_all[len(random_sorting)-test_leftout:,:]
         self.train_y = ys_all[:len(random_sorting)-test_leftout,:]
         self.test_y = ys_all[len(random_sorting)-test_leftout:,:]
-        self.description = 'ASIA (bnlearn, Bernoulli)'
+        self.description = description
 
 with tf.device('/GPU:0'):
     conf = Config()
     conf.model_name = 'cspn'
-    conf.num_epochs = 10#130
-    conf.batch_size = 100#1000
 
-    x_dims = 64#16
-    y_dims = 8#4
+    #################################################################
+
+    # parameters to be adapted
+    conf.num_epochs = 10 # Causal Health: 130
+    conf.batch_size = 100 # Causal Health: 1000
+    num_sum_weights = 2400 # Causal Health: 600
+    num_leaf_weights = 96 # Causal Health: 12
+    using_bnl_dataset = True # Causal Health: False
+    bnl_dataset = 'asia'
+    description = '{} (bnlearn, Bernoulli)'.format(bnl_dataset) # Causal Health: 'Causal Health (Cont.)'
+    dataset = BnLearnDataset(bnl_dataset, conf.batch_size, description) # CausalHealthDataset(batch_size)
+
+    # low, high are the sample range for getting the Probability Density Function (pdf)
+    low=-0.5 # Causal Health: -20
+    high=1.5 # Causal Health: 100
+    save_dir="iSPN_trained_uniform_interventions_{}/".format(bnl_dataset) # if not specified, then plots are plotted instead of saved
+
+    #################################################################
+
+    x_dims = dataset.train_x.shape[1]
+    y_dims = dataset.train_y.shape[1]
     batch_size = conf.batch_size
     x_shape = (batch_size, x_dims)
     y_shape = (batch_size, y_dims)
@@ -137,7 +154,8 @@ with tf.device('/GPU:0'):
     train_ph = tf.placeholder(tf.bool)
 
     # generate parameters for spn
-    sum_weights, leaf_weights = model.build_nn_mnist(x_ph, y_shape, train_ph, 2400,96)#600, 12)
+    # bnl_datasets and the causal health data use the simple (non-conv) mlp
+    sum_weights, leaf_weights = model.build_nn_mnist(x_ph, y_shape, train_ph, num_sum_weights, num_leaf_weights, bnl_dataset=using_bnl_dataset)
     param_provider = RAT_SPN.ScopeBasedParamProvider(sum_weights, leaf_weights)
 
     # build spn graph
@@ -154,16 +172,10 @@ with tf.device('/GPU:0'):
     spn = RAT_SPN.RatSpn(num_classes=1, region_graph=rg, name="spn", args=args)
     print("TOTAL", spn.num_params())
 
-    #dataset = CausalHealthDataset(batch_size)
-    dataset = BnLearnDataset('asia', batch_size)
-
     sess = tf.Session(config=tf.ConfigProto(
         allow_soft_placement=True, log_device_placement=False))
     trainer = CspnTrainer(spn, dataset, x_ph, train_ph, conf, sess=sess)
     loss_curve = trainer.run_training(no_save=True)
-
-    # TODO: this is not implemented by xshao and others
-    #samples = trainer.spn.sample()
 
     # test performance on test set, unseen data
     x_batch = dataset.test_x[: conf.batch_size]
@@ -184,12 +196,15 @@ with tf.device('/GPU:0'):
 
 
     def compute_pdf(dim, N, low, high, intervention, visualize=False, dd=None, comment=None):
-        #g = get_graph_for_intervention_CHD(intervention)
-        dict_interv = next(item for item in dataset.data if item["interv"] == intervention)
-        g = np.array(dict_interv['adjmat'],dtype=float).flatten()
-        y_batch = np.zeros((N,8))#4))
+        if bnl_dataset:
+            dict_interv = next(item for item in dataset.data if item["interv"] == intervention)
+            g = np.array(dict_interv['adjmat'],dtype=float).flatten()
+        else:
+            print('Assuming Causal Health Dataset.')
+            g = get_graph_for_intervention_CHD(intervention)
+        y_batch = np.zeros((N,y_dims))#4))
         y_batch[:,dim] = np.linspace(low,high,N)
-        marginalized = np.ones((N,8))#4))
+        marginalized = np.ones((N,y_dims))#4))
         marginalized[:,dim] = 0. # seemingly one sets the desired dim to 0
         x_batch = np.tile(g,(N,1))#dataset.train_x[:N]
         feed_dict = {trainer.x_ph: x_batch,
@@ -252,33 +267,28 @@ with tf.device('/GPU:0'):
         out = sess.run(trainer.spn_output, feed_dict=feed_dict)
         return np.exp(out[0,:][0])
 
-    # # params
-    # N = 1000
-    # dd = {0: "Age", 1: "Food Habits", 2: "Health", 3: "Mobility"}
-    # dim = 2  # checking Food Habits, (A,F,H,M)=(0,1,2,3)
-    # low=-20
-    # high=100
-    # comment = "GT is a Gaussian (-5,0.1)"
-    # # computation
-    # pdf_vals = compute_pdf(dim,N,low,high,visualize=True,dd=dd,comment=comment)
-
-    colors = ['pink', 'blue', 'orange', 'lightgreen', 'yellow', 'red', 'cyan', 'purple']
+    colors = ['pink', 'blue', 'orange', 'lightgreen', 'yellow', 'red', 'cyan', 'purple'] # ASSUMES: NEVER more than 8 variables
     N = batch_size
-    low=-0.5#-20
-    high=1.5#100
-    save_dir="iSPN_trained_uniform_interventions_ASIA/"
     for ind, interv_desc in enumerate(dataset.intervention):
         fig, axs = plt.subplots(2, 4, figsize=(12, 10))
-        # sampling density #plt.plot(np.linspace(low,high,N),np.zeros(N), marker="o"); plt.show()
-        #pp = '../datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_{}_N100000.pkl'.format(interv_desc)
-        #ppN = int(pp.split("_N")[1].split(".pkl")[0]) if interv_desc != "None" else int(pp.split("None")[1].split("_N")[1].split(".pkl")[0])
-        comment = ''#"Histograms on {} K samples, Training on {} K samples".format(np.round(ppN/ 1000,decimals=1), np.round(dataset.train_x.shape[0] / 1000,decimals=1))
-        #with open(pp, "rb") as f:
-        #    data = pickle.load(f)
-        data = dataset.data[ind]['data']
-        for ind_d, d in enumerate(dataset.data[ind]['data'].columns):#['Age', 'Food Habits', 'Health', 'Mobility']):
+        if bnl_dataset:
+            comment = ''
+            data = dataset.data[ind]['data']
+            variables = dataset.data[ind]['data'].columns
+        else:
+            print('Assuming Causal Health Datset.')
+            pp = '../datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_{}_N100000.pkl'.format(interv_desc)
+            ppN = int(pp.split("_N")[1].split(".pkl")[0]) if interv_desc != "None" else int(pp.split("None")[1].split("_N")[1].split(".pkl")[0])
+            comment = "Histograms on {} K samples, Training on {} K samples".format(np.round(ppN/ 1000,decimals=1), np.round(dataset.train_x.shape[0] / 1000,decimals=1))
+            with open(pp, "rb") as f:
+                data = pickle.load(f)
+            variables = ['Age', 'Food Habits', 'Health', 'Mobility']
+        for ind_d, d in enumerate(variables):
             # gt distribution
-            hist_data = data[d]#dataset.data[d[0]]
+            if bnl_dataset:
+                hist_data = data[d]
+            else:
+                hist_data = dataset.data[d[0]]
             weights = np.ones_like(hist_data)/len(hist_data)
             h = axs.flatten()[ind_d].hist(hist_data, color=colors[ind_d], label="GT", weights=weights, edgecolor=colors[ind_d])
             axs.flatten()[ind_d].set_title('{}'.format(d))
@@ -294,6 +304,8 @@ with tf.device('/GPU:0'):
         if save_dir:
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
-            plt.savefig(os.path.join(save_dir, "iSPN_int_{}.png".format(interv_desc)))
+            save_loc = os.path.join(save_dir, "iSPN_int_{}.png".format(interv_desc))
+            plt.savefig(save_loc)
+            print('Saved @ {}'.format(save_loc))
         else:
             plt.show()
