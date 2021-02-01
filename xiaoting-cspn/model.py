@@ -59,16 +59,16 @@ def build_nn_mnist_baseline(inp, output_shape, training):
     print_num_vars()
     return fc2
 
-def build_nn_mnist(inp, output_shape, training, num_sum_weights, num_leaf_weights, bnl_dataset=False):
+def build_nn_mnist(inp, output_shape, training, num_sum_weights, num_leaf_weights, use_simple_mlp=False):
     batch_size = int(inp.shape[0])
     output_shape = list(output_shape)
     output_dims = 1
     for dim in output_shape[1:]:
         output_dims *= int(dim)
 
-    if int(inp.shape[-2]) == 28:
+    if int(inp.shape[-2]) == 28 and not use_simple_mlp:
         features = build_mnist_conv_layers(inp, training)
-    elif int(inp.shape[1]) == 1 or bnl_dataset:
+    elif int(inp.shape[1]) == 1 or use_simple_mlp:
         features = build_simple_mlp(inp, training)
     else:
         features = build_feature_extraction_layers(inp, training)

@@ -6,6 +6,7 @@ from main import Config, CspnTrainer
 import pickle
 import os
 import numpy as np
+from scipy.spatial import ConvexHull, convex_hull_plot_2d
 import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_theme()
@@ -128,19 +129,23 @@ with tf.device('/GPU:0'):
     #################################################################
 
     # parameters to be adapted
-    conf.num_epochs = 20 # Causal Health: 130
-    conf.batch_size = 100 # Causal Health: 1000
-    num_sum_weights = 2400 # Causal Health: 600
-    num_leaf_weights = 96 # Causal Health: 12
-    using_bnl_dataset = True # Causal Health: False
-    bnl_dataset = 'asia'
-    description = '{} (bnlearn, Bernoulli)'.format(bnl_dataset) # Causal Health: 'Causal Health (Cont.)'
-    dataset = BnLearnDataset(bnl_dataset, conf.batch_size, description) # CausalHealthDataset(batch_size)
+    conf.num_epochs = 130#20 # Causal Health: 130
+    conf.batch_size = 1000#100 # Causal Health: 1000
+    num_sum_weights = 600#2400 # Causal Health: 600
+    num_leaf_weights = 12#96 # Causal Health: 12
+    use_simple_mlp = True # Causal Health: True
+    bnl_dataset = None #'asia' # Causal Health: None
+    dataset_name = bnl_dataset if bnl_dataset else 'CH' # adapt for other datasets
+    description = 'Causal Health (Cont.)'#'{} (bnlearn, Bernoulli)'.format(bnl_dataset) # Causal Health: 'Causal Health (Cont.)'
+    dataset = CausalHealthDataset(conf.batch_size)#BnLearnDataset(bnl_dataset, conf.batch_size, description) # CausalHealthDataset(batch_size)
 
     # low, high are the sample range for getting the Probability Density Function (pdf)
-    low=-0.5 # Causal Health: -20
-    high=1.5 # Causal Health: 100
-    save_dir="iSPN_trained_uniform_interventions_{}/".format(bnl_dataset) # if not specified, then plots are plotted instead of saved
+    low=-20#-0.5 # Causal Health: -20
+    high=100#1.5 # Causal Health: 100
+    save_dir="iSPN_trained_uniform_interventions_{}/".format(dataset_name) # if not specified, then plots are plotted instead of saved
+
+    plot_mpe = False
+    plot_convex_hull = True
 
     #################################################################
 
@@ -155,7 +160,7 @@ with tf.device('/GPU:0'):
 
     # generate parameters for spn
     # bnl_datasets and the causal health data use the simple (non-conv) mlp
-    sum_weights, leaf_weights = model.build_nn_mnist(x_ph, y_shape, train_ph, num_sum_weights, num_leaf_weights, bnl_dataset=using_bnl_dataset)
+    sum_weights, leaf_weights = model.build_nn_mnist(x_ph, y_shape, train_ph, num_sum_weights, num_leaf_weights, use_simple_mlp=use_simple_mlp)
     param_provider = RAT_SPN.ScopeBasedParamProvider(sum_weights, leaf_weights)
 
     # build spn graph
@@ -200,7 +205,6 @@ with tf.device('/GPU:0'):
             dict_interv = next(item for item in dataset.data if item["interv"] == intervention)
             g = np.array(dict_interv['adjmat'],dtype=float).flatten()
         else:
-            print('Assuming Causal Health Dataset.')
             g = get_graph_for_intervention_CHD(intervention)
         y_batch = np.zeros((N,y_dims))#4))
         y_batch[:,dim] = np.linspace(low,high,N)
@@ -269,37 +273,52 @@ with tf.device('/GPU:0'):
 
     colors = ['pink', 'blue', 'orange', 'lightgreen', 'yellow', 'red', 'cyan', 'purple'] # ASSUMES: NEVER more than 8 variables
     N = batch_size
-    list_vars_per_interv = [dataset.data[i]['data'].columns for i in range(len(dataset.intervention))]
+    if bnl_dataset:
+        list_vars_per_interv = [dataset.data[i]['data'].columns.tolist() for i in range(len(dataset.intervention))]
+        fig_len_x = 2
+        fig_len_y = 4
+    else:
+        print('Assuming Causal Health Dataset.')
+        fig_len_x = 2
+        fig_len_y = 2
     for ind, interv_desc in enumerate(dataset.intervention):
-        fig, axs = plt.subplots(2, 4, figsize=(12, 10))
+        fig, axs = plt.subplots(fig_len_x, fig_len_y, figsize=(12, 10))
         if bnl_dataset:
             comment = ''
             data = dataset.data[ind]['data']
             variables = list_vars_per_interv[0] # assumes that all datasets have the same variables, makes sure that ordering is consistent
         else:
-            print('Assuming Causal Health Datset.')
             pp = '../datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_{}_N100000.pkl'.format(interv_desc)
             ppN = int(pp.split("_N")[1].split(".pkl")[0]) if interv_desc != "None" else int(pp.split("None")[1].split("_N")[1].split(".pkl")[0])
             comment = "Histograms on {} K samples, Training on {} K samples".format(np.round(ppN/ 1000,decimals=1), np.round(dataset.train_x.shape[0] / 1000,decimals=1))
             with open(pp, "rb") as f:
                 data = pickle.load(f)
             variables = ['Age', 'Food Habits', 'Health', 'Mobility']
+            list_vars_per_interv = [variables] * len(dataset.intervention)
         for ind_d, d in enumerate(variables):
             # gt distribution
             if bnl_dataset:
                 hist_data = data[d]
             else:
-                hist_data = dataset.data[d[0]]
+                hist_data = data[d[0]]
             weights = np.ones_like(hist_data)/len(hist_data)
             h = axs.flatten()[ind_d].hist(hist_data, color=colors[ind_d], label="GT", weights=weights, edgecolor=colors[ind_d])
             axs.flatten()[ind_d].set_title('{}'.format(d))
             axs.flatten()[ind_d].set_xlim(low, high)
             # mpe
-            xc = np.round(mpe[0,ind_d], decimals=1)
-            axs.flatten()[ind_d].axvline(x=xc, label='CSPN Max = {}'.format(xc), c='red')
+            if plot_mpe:
+                xc = np.round(mpe[0,ind_d], decimals=1)
+                axs.flatten()[ind_d].axvline(x=xc, label='CSPN Max = {}'.format(xc), c='red')
             # pdf
-            vals_x, vals_pdf = compute_pdf(list_vars_per_interv[ind].tolist().index(d), N, low, high, intervention=interv_desc, visualize=False)
+            vals_x, vals_pdf = compute_pdf(list_vars_per_interv[ind].index(d), N, low, high, intervention=interv_desc, visualize=False)
             axs.flatten()[ind_d].plot(vals_x, vals_pdf, label="CSPN learned PDF", color="black", linestyle='solid', linewidth=1.5)
+            # convex hull
+            if plot_convex_hull:
+                points = np.vstack((vals_x,vals_pdf[:,0])).T
+                hull = ConvexHull(points)
+                for ind_s, simplex in enumerate(hull.simplices):
+                    label = 'Convex Hull' if ind_s == 0 else None
+                    axs.flatten()[ind_d].plot(points[simplex, 0], points[simplex, 1], 'k-.',label=label)
             axs.flatten()[ind_d].legend(prop={'size':9})
         plt.suptitle('Intervention: {}, sampled {} steps over({},{}), hist_n_bins={}, Train LL {:.2f}\n{}'.format(interv_desc,N,low,high, len(h[0]), np.round(loss_curve[-1],decimals=2), comment))
         if save_dir:
