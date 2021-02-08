@@ -129,19 +129,19 @@ with tf.device('/GPU:0'):
     #################################################################
 
     # parameters to be adapted
-    conf.num_epochs = 130#20 # Causal Health: 130
-    conf.batch_size = 1000#100 # Causal Health: 1000
+    conf.num_epochs = 20#20 # Causal Health: 130
+    conf.batch_size = 100#100 # Causal Health: 1000
     num_sum_weights = 600#2400 # Causal Health: 600
-    num_leaf_weights = 12#96 # Causal Health: 12
+    num_leaf_weights = 96#96 # Causal Health: 12
     use_simple_mlp = True # Causal Health: True
-    bnl_dataset = None #'asia' # Causal Health: None
+    bnl_dataset = 'cancer'#'earthquake' #'asia' # Causal Health: None
     dataset_name = bnl_dataset if bnl_dataset else 'CH' # adapt for other datasets
-    description = 'Causal Health (Cont.)'#'{} (bnlearn, Bernoulli)'.format(bnl_dataset) # Causal Health: 'Causal Health (Cont.)'
-    dataset = CausalHealthDataset(conf.batch_size)#BnLearnDataset(bnl_dataset, conf.batch_size, description) # CausalHealthDataset(batch_size)
+    description = '{} (bnlearn, Bernoulli)'.format(bnl_dataset)#'Causal Health (Cont.)'#'{} (bnlearn, Bernoulli)'.format(bnl_dataset) # Causal Health: 'Causal Health (Cont.)'
+    dataset = BnLearnDataset(bnl_dataset, conf.batch_size, description)#CausalHealthDataset(conf.batch_size)#BnLearnDataset(bnl_dataset, conf.batch_size, description) # CausalHealthDataset(batch_size)
 
     # low, high are the sample range for getting the Probability Density Function (pdf)
-    low=-20#-0.5 # Causal Health: -20
-    high=100#1.5 # Causal Health: 100
+    low=-0.5#-0.5 # Causal Health: -20
+    high=1.5#1.5 # Causal Health: 100
     save_dir="iSPN_trained_uniform_interventions_{}/".format(dataset_name) # if not specified, then plots are plotted instead of saved
 
     plot_mpe = False
