@@ -31,7 +31,7 @@ def build_mnist_conv_layers(inp, training):
     return linearized
 
 def build_simple_mlp(inp, training):
-    with tf.variable_scope('nn'):
+    with tf.variable_scope('nn', reuse=tf.AUTO_REUSE):
         print(inp.shape)
         fc1 = tf.layers.dense(inputs=inp, units=10, activation=tf.nn.relu)
         fc2 = tf.layers.dense(inputs=fc1, units=10, activation=tf.nn.relu)

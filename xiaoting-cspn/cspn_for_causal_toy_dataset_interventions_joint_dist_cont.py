@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_theme()
 np.set_printoptions(suppress=True)
+import gc
 
 def get_graph_for_intervention_CHD(intervention):
     """
@@ -80,7 +81,6 @@ class CausalHealthDataset():
             xs = np.tile(g.flatten()[:,np.newaxis],len(ys)).T
             xs_all.append(xs)
             ys_all.append(ys)
-        np.random.seed(0)
         random_sorting = np.random.permutation(sum([x.shape[0] for x in xs_all]))
         xs_all = np.vstack(xs_all)[random_sorting]
         ys_all = np.vstack(ys_all)[random_sorting]
@@ -94,10 +94,17 @@ class CausalHealthDataset():
         #import pdb; pdb.set_trace()
 
 class BnLearnDataset():
-    def __init__(self, bif, batch_size, description):
+    def __init__(self, bif, batch_size, description, whitelist):
         p = '../datasets/other/benchmark_data_for_uniform_interventions/{}_uniform_interventions_N10000.pkl'.format(bif)
         with open(p, "rb") as f:
             data = pickle.load(f)
+        lut_interventions = {}
+        for ind, d in enumerate(data):
+            lut_interventions.update({d["interv"]: ind})
+        if whitelist is None:
+            whitelist = list(lut_interventions.keys())
+        indices = [lut_interventions[interv] for interv in whitelist]
+        data = [data[i] for i in indices]
         self.data = data
         self.intervention = []
         ys_all = []
@@ -129,160 +136,246 @@ with tf.device('/GPU:0'):
     #################################################################
 
     # parameters to be adapted
-    conf.num_epochs = 130#20 # Causal Health: 130
-    conf.batch_size = 1000#100 # Causal Health: 1000
-    num_sum_weights = 600#2400 # Causal Health: 600
-    num_leaf_weights = 12#96 # Causal Health: 12
+    conf.num_epochs = 20#100 # Causal Health: 130
+    conf.batch_size = 100#1000 # Causal Health: 1000
+    num_sum_weights = 2400#600 # Causal Health: 600
+    num_leaf_weights = 96#12 # Causal Health: 12
     use_simple_mlp = True # Causal Health: True
-    bnl_dataset = None #'asia' # Causal Health: None
+    bnl_dataset = "asia" #None # Causal Health: None
+    whitelist = None #[None, "lung"]  # only BNL datasetes: all interventions to be considered, if None then everything is considered
     dataset_name = bnl_dataset if bnl_dataset else 'CH' # adapt for other datasets
-    description = 'Causal Health (Cont.)'#'{} (bnlearn, Bernoulli)'.format(bnl_dataset) # Causal Health: 'Causal Health (Cont.)'
-    dataset = CausalHealthDataset(conf.batch_size)#BnLearnDataset(bnl_dataset, conf.batch_size, description) # CausalHealthDataset(batch_size)
+    description = '{} (bnlearn, Bernoulli)'.format(bnl_dataset) #'Causal Health (Cont.)' # Causal Health: 'Causal Health (Cont.)'
+    dataset = BnLearnDataset(bnl_dataset, conf.batch_size, description, whitelist) #CausalHealthDataset(conf.batch_size) # CausalHealthDataset(conf.batch_size)
 
     # low, high are the sample range for getting the Probability Density Function (pdf)
-    low=-20#-0.5 # Causal Health: -20
-    high=100#1.5 # Causal Health: 100
+    low=-0.5#-20 # Causal Health: -20
+    high=1.5#100 # Causal Health: 100
     save_dir="iSPN_trained_uniform_interventions_{}/".format(dataset_name) # if not specified, then plots are plotted instead of saved
 
+    plot_loss_curve = False
     plot_mpe = False
-    plot_convex_hull = True
+    plot_convex_hull = False
+    show_axes_and_legend = True#False
 
     #################################################################
 
-    x_dims = dataset.train_x.shape[1]
-    y_dims = dataset.train_y.shape[1]
-    batch_size = conf.batch_size
-    x_shape = (batch_size, x_dims)
-    y_shape = (batch_size, y_dims)
-
-    x_ph = tf.placeholder(tf.float32, x_shape)
-    train_ph = tf.placeholder(tf.bool)
-
-    # generate parameters for spn
-    # bnl_datasets and the causal health data use the simple (non-conv) mlp
-    sum_weights, leaf_weights = model.build_nn_mnist(x_ph, y_shape, train_ph, num_sum_weights, num_leaf_weights, use_simple_mlp=use_simple_mlp)
-    param_provider = RAT_SPN.ScopeBasedParamProvider(sum_weights, leaf_weights)
-
-    # build spn graph
-    rg = region_graph.RegionGraph(range(y_dims))
-    for _ in range(0, 4):
-        rg.random_split(2, 2)
-
-    args = RAT_SPN.SpnArgs()
-    args.normalized_sums = True
-    args.param_provider = param_provider
-    args.num_sums = 4
-    args.num_gauss = 4
-    args.dist = 'Gauss'
-    spn = RAT_SPN.RatSpn(num_classes=1, region_graph=rg, name="spn", args=args)
-    print("TOTAL", spn.num_params())
-
-    sess = tf.Session(config=tf.ConfigProto(
-        allow_soft_placement=True, log_device_placement=False))
-    trainer = CspnTrainer(spn, dataset, x_ph, train_ph, conf, sess=sess)
-    loss_curve = trainer.run_training(no_save=True)
-
-    # test performance on test set, unseen data
-    x_batch = dataset.test_x[: conf.batch_size]
-    y_batch = dataset.test_y[: conf.batch_size]
-    feed_dict = {trainer.x_ph: x_batch,
-                 trainer.y_ph: np.zeros_like(y_batch),
-                 trainer.marginalized: np.ones(trainer.marginalized.shape),
-                 trainer.train_ph: False}
-    sample = False
-    mpe = trainer.spn.reconstruct_batch(feed_dict, trainer.sess, sample=sample)
-    print('****************\nMost Probable Explanation: (with Sample={})\n{}'.format(sample,mpe))
-
-    plt.plot(range(len(loss_curve)), loss_curve)
-    plt.title('Intervention: {}\nTraining Gaussian CSPN on {} with {} Samples'.format(dataset.intervention, dataset.description, len(dataset.train_x)))
-    plt.ylabel('Log-Likelihood')
-    plt.xlabel('Batch #')
-    plt.show()
+    baseline = None #'../results/baseline_CBN.pkl' # Causal Baseline, used for Motivation Figure
 
 
-    def compute_pdf(dim, N, low, high, intervention, visualize=False, dd=None, comment=None):
-        if bnl_dataset:
-            dict_interv = next(item for item in dataset.data if item["interv"] == intervention)
-            g = np.array(dict_interv['adjmat'],dtype=float).flatten()
-        else:
-            g = get_graph_for_intervention_CHD(intervention)
-        y_batch = np.zeros((N,y_dims))#4))
-        y_batch[:,dim] = np.linspace(low,high,N)
-        marginalized = np.ones((N,y_dims))#4))
-        marginalized[:,dim] = 0. # seemingly one sets the desired dim to 0
-        x_batch = np.tile(g,(N,1))#dataset.train_x[:N]
+    vals_per_seed = {}
+    master_seeds = [606, 1011, 3004, 5555, 12096]
+    for cur_seed in master_seeds:
+
+        np.random.seed(cur_seed)
+        tf.set_random_seed(cur_seed)
+
+        x_dims = dataset.train_x.shape[1]
+        y_dims = dataset.train_y.shape[1]
+        batch_size = conf.batch_size
+        x_shape = (batch_size, x_dims)
+        y_shape = (batch_size, y_dims)
+
+        x_ph = tf.placeholder(tf.float32, x_shape)
+        train_ph = tf.placeholder(tf.bool)
+
+        # generate parameters for spn
+        # bnl_datasets and the causal health data use the simple (non-conv) mlp
+        sum_weights, leaf_weights = model.build_nn_mnist(x_ph, y_shape, train_ph, num_sum_weights, num_leaf_weights, use_simple_mlp=use_simple_mlp)
+        param_provider = RAT_SPN.ScopeBasedParamProvider(sum_weights, leaf_weights)
+
+        # build spn graph
+        rg = region_graph.RegionGraph(range(y_dims))
+        for _ in range(0, 4):
+            rg.random_split(2, 2)
+
+        args = RAT_SPN.SpnArgs()
+        args.normalized_sums = True
+        args.param_provider = param_provider
+        args.num_sums = 4
+        args.num_gauss = 4
+        args.dist = 'Gauss'
+        spn = RAT_SPN.RatSpn(num_classes=1, region_graph=rg, name="spn", args=args)
+        print("TOTAL", spn.num_params())
+
+        sess = tf.Session(config=tf.ConfigProto(
+            allow_soft_placement=True, log_device_placement=False))
+        trainer = CspnTrainer(spn, dataset, x_ph, train_ph, conf, sess=sess)
+        loss_curve = trainer.run_training(no_save=True)
+
+        # test performance on test set, unseen data
+        x_batch = dataset.test_x[: conf.batch_size]
+        y_batch = dataset.test_y[: conf.batch_size]
         feed_dict = {trainer.x_ph: x_batch,
-                     trainer.y_ph: y_batch,
-                     trainer.marginalized: marginalized,
-                     trainer.train_ph: False} # this is important, also used for MPE, makes things deterministic
-        out = sess.run(trainer.spn_output, feed_dict=feed_dict)
-        #print("+++++++++ SPN OUTPUT MARGINALIZED\n{}".format(out))
-        if visualize:
-            fig = plt.figure(figsize=(12,6))
-            plt.subplot(1,2,1)
-            plt.plot(y_batch[:, dim], out)
-            plt.title("Log Likelihood")
-            plt.subplot(1,2,2)
-            plt.plot(y_batch[:, dim], np.exp(out))
-            plt.title("Likelihood")
-            if dd:
-                name = dd[dim]
+                     trainer.y_ph: np.zeros_like(y_batch),
+                     trainer.marginalized: np.ones(trainer.marginalized.shape),
+                     trainer.train_ph: False}
+        sample = False
+        mpe = trainer.spn.reconstruct_batch(feed_dict, trainer.sess, sample=sample)
+        print('****************\nMost Probable Explanation: (with Sample={})\n{}'.format(sample,mpe))
+
+        if plot_loss_curve:
+            plt.plot(range(len(loss_curve)), loss_curve)
+            plt.title('Intervention: {}\nTraining Gaussian CSPN on {} with {} Samples'.format(dataset.intervention, dataset.description, len(dataset.train_x)))
+            plt.ylabel('Log-Likelihood')
+            plt.xlabel('Batch #')
+            plt.show()
+
+        def compute_pdf(dim, N, low, high, intervention, visualize=False, dd=None, comment=None):
+            if bnl_dataset:
+                dict_interv = next(item for item in dataset.data if item["interv"] == intervention)
+                g = np.array(dict_interv['adjmat'],dtype=float).flatten()
             else:
-                name = "Variable " + str(dim)
-            plt.suptitle("For {} ({})\n{}".format(name, name[0], comment))
-            plt.show()
-        vals_x = y_batch[:,dim] # range (all sampled points along axis)
-        vals_pdf = np.exp(out) # given that out is log-likelihood, take exp() and these are the likelihoods for pdf
-        return vals_x, vals_pdf
+                g = get_graph_for_intervention_CHD(intervention)
+            y_batch = np.zeros((N,y_dims))#4))
+            y_batch[:,dim] = np.linspace(low,high,N)
+            marginalized = np.ones((N,y_dims))#4))
+            marginalized[:,dim] = 0. # seemingly one sets the desired dim to 0
+            x_batch = np.tile(g,(N,1))#dataset.train_x[:N]
+            feed_dict = {trainer.x_ph: x_batch,
+                         trainer.y_ph: y_batch,
+                         trainer.marginalized: marginalized,
+                         trainer.train_ph: False} # this is important, also used for MPE, makes things deterministic
+            out = sess.run(trainer.spn_output, feed_dict=feed_dict)
+            #print("+++++++++ SPN OUTPUT MARGINALIZED\n{}".format(out))
+            if visualize:
+                fig = plt.figure(figsize=(12,6))
+                plt.subplot(1,2,1)
+                plt.plot(y_batch[:, dim], out)
+                plt.title("Log Likelihood")
+                plt.subplot(1,2,2)
+                plt.plot(y_batch[:, dim], np.exp(out))
+                plt.title("Likelihood")
+                if dd:
+                    name = dd[dim]
+                else:
+                    name = "Variable " + str(dim)
+                plt.suptitle("For {} ({})\n{}".format(name, name[0], comment))
+                plt.show()
+            vals_x = y_batch[:,dim] # range (all sampled points along axis)
+            vals_pdf = np.exp(out) # given that out is log-likelihood, take exp() and these are the likelihoods for pdf
+            return vals_x, vals_pdf
 
-    def compute_single_pdf(x,dim,N):
-        # this is the single PDF for a specific variable "dim"
-        # just set N==conf.batch_size
-        # doing:
-        #
-        #   import scipy.integrate as integrate
-        #   integrate.quad(lambda x: compute_single_pdf(x,1,1000), -10, 10)[0]
-        #
-        # gives as expected 1, if dim=1 is "F" where do(F=N(-5,0.1))
-        """
-        Full Example:
-            dim = 1 # is F in this case
-            low = -20
-            high = 20
-            N = 1000
-            xs = np.linspace(low, high, N)
-            import scipy.integrate as integrate
-            integral = integrate.quad(lambda x: compute_single_pdf(x,dim,N), low, high)[0]
-            plt.plot(xs, [compute_single_pdf(x, dim, N) for x in xs],
-                     label="Integrates on ({},{}) to {}".format(low, high, np.round(integral)))
-            plt.title("Learned PDF from CSPN")
-            plt.legend()
-            plt.show()
-        """
-        y_batch = np.zeros((N,4))
-        y_batch[0,dim] = x
-        marginalized = np.ones((N,4))
-        marginalized[:,dim] = 0. # seemingly one sets the desired dim to 0
-        x_batch = dataset.train_x[:N]
-        feed_dict = {trainer.x_ph: x_batch,
-                     trainer.y_ph: y_batch,
-                     trainer.marginalized: marginalized,
-                     trainer.train_ph: False} # this is important, also used for MPE, makes things deterministic
-        out = sess.run(trainer.spn_output, feed_dict=feed_dict)
-        return np.exp(out[0,:][0])
+        def compute_single_pdf(x,dim,N):
+            # this is the single PDF for a specific variable "dim"
+            # just set N==conf.batch_size
+            # doing:
+            #
+            #   import scipy.integrate as integrate
+            #   integrate.quad(lambda x: compute_single_pdf(x,1,1000), -10, 10)[0]
+            #
+            # gives as expected 1, if dim=1 is "F" where do(F=N(-5,0.1))
+            """
+            Full Example:
+                dim = 1 # is F in this case
+                low = -20
+                high = 20
+                N = 1000
+                xs = np.linspace(low, high, N)
+                import scipy.integrate as integrate
+                integral = integrate.quad(lambda x: compute_single_pdf(x,dim,N), low, high)[0]
+                plt.plot(xs, [compute_single_pdf(x, dim, N) for x in xs],
+                         label="Integrates on ({},{}) to {}".format(low, high, np.round(integral)))
+                plt.title("Learned PDF from CSPN")
+                plt.legend()
+                plt.show()
+            """
+            y_batch = np.zeros((N,4))
+            y_batch[0,dim] = x
+            marginalized = np.ones((N,4))
+            marginalized[:,dim] = 0. # seemingly one sets the desired dim to 0
+            x_batch = dataset.train_x[:N]
+            feed_dict = {trainer.x_ph: x_batch,
+                         trainer.y_ph: y_batch,
+                         trainer.marginalized: marginalized,
+                         trainer.train_ph: False} # this is important, also used for MPE, makes things deterministic
+            out = sess.run(trainer.spn_output, feed_dict=feed_dict)
+            return np.exp(out[0,:][0])
 
-    colors = ['pink', 'blue', 'orange', 'lightgreen', 'yellow', 'red', 'cyan', 'purple'] # ASSUMES: NEVER more than 8 variables
+        # collect all data beforehand
+        N = batch_size
+        if bnl_dataset:
+            list_vars_per_interv = [dataset.data[i]['data'].columns.tolist() for i in range(len(dataset.intervention))]
+            variables = list_vars_per_interv[0]
+        else:
+            variables = ['Age', 'Food Habits', 'Health', 'Mobility']
+            list_vars_per_interv = [variables] * len(dataset.intervention)
+
+        vals_per_intervention = {}
+        for ind, interv_desc in enumerate(dataset.intervention):
+            vals_per_var = {}
+            for ind_d, d in enumerate(variables):
+                vals_x, vals_pdf = compute_pdf(list_vars_per_interv[ind].index(d), N, low, high, intervention=interv_desc,visualize=False)
+                vals_per_var.update({d: (vals_x, vals_pdf)})
+            vals_per_intervention.update({interv_desc: vals_per_var})
+        vals_per_seed.update({cur_seed: vals_per_intervention})
+
+        # clear the session, to re-run
+        tf.reset_default_graph()
+
+    if save_dir:
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        save_loc = os.path.join(save_dir, "iSPN_pdfs_per_seed.pkl")
+        with open(save_loc, "wb") as f:
+            pickle.dump(vals_per_seed, f)
+
+    # vals_x assumed to be same everywhere and not collected here
+    #vals_x = vals_per_seed[master_seeds[0]][dataset.intervention[0]][...]
+    mean_vals_per_interv = {}
+    for ind, interv_desc in enumerate(dataset.intervention):
+        mean_vals_per_var = {}
+        for v in vals_per_seed[master_seeds[0]][interv_desc].keys():
+            vals_pdfs = []
+            for seed in master_seeds:
+                vals_pdf = vals_per_seed[seed][interv_desc][v][1][:,0]
+                vals_pdfs.append(vals_pdf)
+            vals_pdfs = np.stack(vals_pdfs)
+            mean_vals_per_var.update({v: (np.mean(vals_pdfs, axis=0), np.std(vals_pdfs, axis=0))})
+        mean_vals_per_interv.update({interv_desc: mean_vals_per_var})
+
+    # load causalnex baseline
+    try:
+        if baseline is None or baseline == "":
+            raise Exception
+        with open(baseline,'rb') as f:
+            baseline = pickle.load(f)
+    except Exception as e:
+        print("No Baseline available or should be used.")
+        baseline = None
+
+
+    #colors = ['pink', 'blue', 'orange', 'lightgreen', 'yellow', 'red', 'cyan', 'purple'] # ASSUMES: NEVER more than 8 variables
     N = batch_size
     if bnl_dataset:
         list_vars_per_interv = [dataset.data[i]['data'].columns.tolist() for i in range(len(dataset.intervention))]
         fig_len_x = 2
         fig_len_y = 4
+        color_pairs = [
+            ('#e480b5', '#db569d'),
+            ('#40b3ef', '#13a0e9'),
+            ('#ffbf2e', '#faad00'),
+            ('#4fe547', '#26cb1d'),
+            ('#ffff6b', '#ffff27'),
+            ('#d54b37', '#892b1d'),
+            ('#20e6d0', '#15beab'),
+            ('#a575dc', '#8b4cd1'),
+        ]
+        share_x = True
+        share_y = True
     else:
         print('Assuming Causal Health Dataset.')
         fig_len_x = 2
         fig_len_y = 2
+        color_pairs = [
+            ('#ffcfe2', '#ffbed7'),
+            ('#ffff6b', '#d1d100'),
+            ('#88ed83', '#4fe547'),
+            ('#7fccf4','#40b3ef'),
+        ]
+        share_x = True
+        share_y = False
     for ind, interv_desc in enumerate(dataset.intervention):
-        fig, axs = plt.subplots(fig_len_x, fig_len_y, figsize=(12, 10))
+        fig, axs = plt.subplots(fig_len_x, fig_len_y, figsize=(12, 10), sharey=share_y, sharex=share_x)
         if bnl_dataset:
             comment = ''
             data = dataset.data[ind]['data']
@@ -296,22 +389,27 @@ with tf.device('/GPU:0'):
             variables = ['Age', 'Food Habits', 'Health', 'Mobility']
             list_vars_per_interv = [variables] * len(dataset.intervention)
         for ind_d, d in enumerate(variables):
+            if baseline:
+                axs.flatten()[ind_d].bar(x=[0, 1], height=[baseline[interv_desc][d][0], baseline[interv_desc][d][1]],
+                                         edgecolor='#747474', facecolor='#b2b2b2', width=0.15, label="CBN", alpha=0.9)
             # gt distribution
             if bnl_dataset:
                 hist_data = data[d]
             else:
                 hist_data = data[d[0]]
             weights = np.ones_like(hist_data)/len(hist_data)
-            h = axs.flatten()[ind_d].hist(hist_data, color=colors[ind_d], label="GT", weights=weights, edgecolor=colors[ind_d])
-            axs.flatten()[ind_d].set_title('{}'.format(d))
-            axs.flatten()[ind_d].set_xlim(low, high)
+            h = axs.flatten()[ind_d].hist(hist_data, facecolor=color_pairs[ind_d][0], edgecolor=color_pairs[ind_d][1], label="GT", weights=weights)
+
             # mpe
             if plot_mpe:
                 xc = np.round(mpe[0,ind_d], decimals=1)
                 axs.flatten()[ind_d].axvline(x=xc, label='CSPN Max = {}'.format(xc), c='red')
             # pdf
-            vals_x, vals_pdf = compute_pdf(list_vars_per_interv[ind].index(d), N, low, high, intervention=interv_desc, visualize=False)
-            axs.flatten()[ind_d].plot(vals_x, vals_pdf, label="CSPN learned PDF", color="black", linestyle='solid', linewidth=1.5)
+            #vals_x, vals_pdf = compute_pdf(list_vars_per_interv[ind].index(d), N, low, high, intervention=interv_desc, visualize=False)
+            #axs.flatten()[ind_d].plot(vals_x, vals_pdf, label="CSPN learned PDF", color="black", linestyle='solid', linewidth=1.5)
+            vals_pdf_mean, vals_pdf_std = mean_vals_per_interv[interv_desc][d]
+            axs.flatten()[ind_d].plot(vals_x, vals_pdf_mean, 'k', label="i-SPN", color='#CC4F1B', linestyle='solid', linewidth=1.5, zorder=10)
+            axs.flatten()[ind_d].fill_between(vals_x, vals_pdf_mean - vals_pdf_std, vals_pdf_mean + vals_pdf_std, alpha=0.5, edgecolor='#CC4F1B', facecolor='#FF9848', zorder=9)
             # convex hull
             if plot_convex_hull:
                 points = np.vstack((vals_x,vals_pdf[:,0])).T
@@ -319,8 +417,21 @@ with tf.device('/GPU:0'):
                 for ind_s, simplex in enumerate(hull.simplices):
                     label = 'Convex Hull' if ind_s == 0 else None
                     axs.flatten()[ind_d].plot(points[simplex, 0], points[simplex, 1], 'k-.',label=label)
-            axs.flatten()[ind_d].legend(prop={'size':9})
-        plt.suptitle('Intervention: {}, sampled {} steps over({},{}), hist_n_bins={}, Train LL {:.2f}\n{}'.format(interv_desc,N,low,high, len(h[0]), np.round(loss_curve[-1],decimals=2), comment))
+
+            if bnl_dataset:
+                axs.flatten()[ind_d].set_ylim(0, 1.3)
+                axs.flatten()[ind_d].set_xticks([0, 1])
+            else:
+                axs.flatten()[ind_d].set_xlim(-20,100)
+                axs.flatten()[ind_d].set_ylim(0,0.325)
+            if not show_axes_and_legend:
+                axs.flatten()[ind_d].axes.xaxis.set_ticklabels([])
+                axs.flatten()[ind_d].axes.yaxis.set_ticklabels([])
+            else:
+                axs.flatten()[ind_d].set_title('{}'.format(d))
+                axs.flatten()[ind_d].legend(prop={'size':9})
+        #plt.suptitle('Intervention: {}, sampled {} steps over({},{}), hist_n_bins={}, Train LL {:.2f}\n{}'.format(interv_desc,N,low,high, len(h[0]), np.round(loss_curve[-1],decimals=2), comment))
+        plt.tight_layout()
         if save_dir:
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
@@ -329,3 +440,5 @@ with tf.device('/GPU:0'):
             print('Saved @ {}'.format(save_loc))
         else:
             plt.show()
+        plt.clf()
+        plt.close()
