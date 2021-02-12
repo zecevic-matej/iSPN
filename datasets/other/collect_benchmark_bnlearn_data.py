@@ -12,11 +12,11 @@ sns.set_theme()
 
 # general parameters
 # check out https://www.bnlearn.com/bnrepository/discrete-small.html#asia
-bif_file = 'earthquake.bif' #'asia.bif' # available are: earthquake, cancer, sachs, survey
+bif_file = 'sachs.bif'#'survey.bif'#'cancer.bif' #'earthquake.bif' #'asia.bif' # available are: earthquake, cancer, sachs, survey
 visualize_immediate = False
 visualize_final = True
 N = 10000
-interventions = ['Earthquake','Alarm','MaryCalls'] # asia example: ['tub','lung','either','dysp']
+interventions = ['Raf','PKC','Mek','PIP3','Erk','Jnk']#['A', 'S', 'E', 'T']#['Pollution', 'Smoker', 'Dyspnoea']#['Earthquake','Alarm','MaryCalls'] # asia example: ['tub','lung','either','dysp']
 save_dir = 'benchmark_data_for_uniform_interventions/'
 
 # load model
