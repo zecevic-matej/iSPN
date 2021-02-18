@@ -104,7 +104,6 @@ class CausalSPN():
             p_x = np.sum([pt['p'][i] for i in np.where((pt[X] == x).all(axis=1))[0]])
             if np.allclose(p_x, 0):
                 print('Encountered Division by Zero.')
-                # TODO: Dev suggested that this is indeed the fault of the learned SPN, thus we will ignore it for now
             for iy, y in enumerate(states_y):
                 p_yx = np.sum([pt['p'][i] for i in np.where((pt[[Y] + X] == np.hstack((y,x))).all(axis=1))[0]])
                 p_y_given_x = p_yx / p_x
