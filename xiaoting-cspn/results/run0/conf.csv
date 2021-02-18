@@ -1,5 +1,0 @@
-num_epochs,1
-batch_size,64
-ckpt_dir,./checkpoints/cspn
-model_name,cspn
-dataset,mnist

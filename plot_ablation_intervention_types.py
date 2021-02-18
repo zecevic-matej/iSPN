@@ -11,7 +11,7 @@ def load_data(p):
         d = pickle.load(f)
     return d
 
-p = glob('/Users/mzecevic/Desktop/repos/causal-spn/xiaoting-cspn/appendix_ablation/proper_run_ep70_100k/*/*.pkl')
+p = glob('/Users/user/Desktop/repos/causal-spn/iSPN/appendix_ablation/proper_run_ep70_100k/*/*.pkl')
 d = {}
 for x in p:
     d.update({x.split("_CH_")[1].split("_ep")[0]: load_data(x)})
@@ -42,7 +42,7 @@ for k in d.keys():
         mean_vals_per_interv.update({interv_desc: mean_vals_per_var})
     d_m.update({k: mean_vals_per_interv})
 
-save_dir = '/Users/mzecevic/Desktop/repos/causal-spn/xiaoting-cspn/appendix_ablation/proper_run_ep70_100k/'
+save_dir = '/Users/user/Desktop/repos/causal-spn/iSPN/appendix_ablation/proper_run_ep70_100k/'
 
 print('Assuming Causal Health Dataset.')
 fig_len_x = len(d_m.keys())
@@ -59,7 +59,7 @@ show_axes_and_legend = False
 
 fig, axs = plt.subplots(fig_len_x, fig_len_y, figsize=(13, 12), sharey=share_y, sharex=share_x)
 for ind, k in enumerate([list(d_m.keys())[x] for x  in [2,0,3,5,1,4]]):
-    pp = f'/Users/mzecevic/Desktop/repos/causal-spn/datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_do(H)={k}_N100000.pkl'
+    pp = f'/Users/user/Desktop/repos/causal-spn/datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_do(H)={k}_N100000.pkl'
     with open(pp, "rb") as f:
         data = pickle.load(f)
     variables = ['Age', 'Food Habits', 'Health', 'Mobility']
@@ -127,7 +127,7 @@ plt.close()
 
 
 # single best vs mean
-p = '/Users/mzecevic/Desktop/repos/causal-spn/xiaoting-cspn/appendix_ablation/iSPN_trained_uniform_interventions_CH_50_ep50/iSPN_pdfs_per_seed.pkl'
+p = '/Users/user/Desktop/repos/causal-spn/iSPN/appendix_ablation/iSPN_trained_uniform_interventions_CH_50_ep50/iSPN_pdfs_per_seed.pkl'
 vals_per_seed = load_data(p)
 all_interv = list(vals_per_seed[606].keys())
 mean_vals_per_interv = {}
@@ -143,7 +143,7 @@ for ind, interv_desc in enumerate(all_interv):
     mean_vals_per_interv.update({interv_desc: mean_vals_per_var})
 
 fig, axs = plt.subplots(2, 4, figsize=(13, 12), sharey=share_y, sharex=share_x)
-pp = f'/Users/mzecevic/Desktop/repos/causal-spn/datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_do(H)=50_N100000.pkl'
+pp = f'/Users/user/Desktop/repos/causal-spn/datasets/data_for_uniform_interventions_continuous/causal_health_toy_data_continuous_intervention_do(H)=50_N100000.pkl'
 with open(pp, "rb") as f:
     data = pickle.load(f)
 variables = ['Age', 'Food Habits', 'Health', 'Mobility']

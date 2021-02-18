@@ -1,2 +1,0 @@
-model_checkpoint_path: "cspn-regular-mnist"
-all_model_checkpoint_paths: "cspn-regular-mnist"
