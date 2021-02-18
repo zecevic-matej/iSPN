@@ -129,7 +129,7 @@ class CspnTrainer:
 
                 if j % 100 == 0:
                     print('ep. {}, batch {}, train ll {:.2f}                  '.format(i, j, -cur_loss), end='\r', flush=True)
-                    loss_curve.append(-cur_loss)
+
                     # TODO: below is just a copy of what is used at the end of example_script.py - maybe combine into one
                     show_immediate_success = False
                     if show_immediate_success:
@@ -160,6 +160,7 @@ class CspnTrainer:
             if i % 2 == 1 and not no_save or each_iter:
                 self.saver.save(self.sess, self.conf.ckpt_dir)
                 print('Parameters saved')
+            loss_curve.append(-cur_loss)
 
         return loss_curve
 

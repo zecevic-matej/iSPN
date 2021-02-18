@@ -79,6 +79,8 @@ class SCM_Health():
         """
         perform a uniform intervention on a single node
         """
+        if "None" in intervention:
+            return
 
         if intervention is not None and self.discrete:
             if self.domains[intervention] is None:
@@ -87,15 +89,63 @@ class SCM_Health():
             self.equations[intervention] = lambda *args: np.random.choice(self.domains[intervention])
             print("Performed Uniform Intervention do({}=U({}))".format(intervention,intervention))
             self.intervention = intervention
-        elif intervention is not None and not self.discrete:
+        elif intervention is not None and not self.discrete and "U" in intervention:
             low=0
             high=100
+            intervention = intervention.split("do(")[1].split(")")[0]
             self.equations[intervention] = lambda *args: np.random.uniform(low,high)
             print("Performed Uniform Intervention do({}=U({},{}))".format(intervention,low,high))
             self.intervention = intervention
             self.intervention_range = (low, high)
-        elif intervention is None:
-            pass
+        elif intervention is not None and not self.discrete and "N" in intervention:
+            low=0
+            high=100
+            mu = int(intervention.split("N(")[1].split(",")[0])
+            sigma = int(intervention.split("N(")[1].split(",")[1].split(")")[0])
+            intervention = intervention.split("do(")[1].split(")")[0]
+            self.equations[intervention] = lambda *args: np.random.normal(mu, np.sqrt(sigma))
+            print("Performed Normal Intervention do({}=N({},{}))".format(intervention,mu,sigma))
+            self.intervention = intervention
+            self.intervention_range = (low, high)
+        elif intervention is not None and not self.discrete and "SBeta" in intervention:
+            low=0
+            high=100
+            p = float(intervention.split("SBeta(")[1].split(",")[0])
+            q = float(intervention.split("SBeta(")[1].split(",")[1].split(")")[0])
+            intervention = intervention.split("do(")[1].split(")")[0]
+            self.equations[intervention] = lambda *args: np.random.beta(p, q) * (high - low) + low
+            print("Performed Non-Standard Beta Intervention do({}=SBeta({},{}))".format(intervention,p,q))
+            self.intervention = intervention
+            self.intervention_range = (low, high)
+        elif intervention is not None and not self.discrete and "Gamma" in intervention:
+            low=0
+            high=100
+            p = float(intervention.split("Gamma(")[1].split(",")[0])
+            q = float(intervention.split("Gamma(")[1].split(",")[1].split(")")[0])
+            intervention = intervention.split("do(")[1].split(")")[0]
+            self.equations[intervention] = lambda *args: np.random.gamma(p,q)
+            print("Performed Gamma Intervention do({}=Gamma({},{}))".format(intervention,p,q))
+            self.intervention = intervention
+            self.intervention_range = (low, high)
+        elif intervention is not None and not self.discrete and "[" in intervention:
+            low=0
+            high=100
+            a = int(intervention.split("[")[1].split(",")[0])
+            b = int(intervention.split("[")[1].split(",")[1].split("]")[0])
+            intervention = intervention.split("do(")[1].split(")")[0]
+            self.equations[intervention] = lambda *args: np.random.choice([a,b])
+            print("Performed Choice Intervention do({}=[{},{}])".format(intervention,a,b))
+            self.intervention = intervention
+            self.intervention_range = (low, high)
+        elif intervention is not None and not self.discrete:
+            low=0
+            high=100
+            scalar = int(intervention.split("=")[1])
+            intervention = intervention.split("do(")[1].split(")")[0]
+            self.equations[intervention] = lambda *args: scalar
+            print("Performed perfect Intervention do({}={})".format(intervention,scalar))
+            self.intervention = intervention
+            self.intervention_range = (low, high)
 
 """
 parameters
@@ -104,7 +154,13 @@ parameters
 discrete = False
 
 interventions = [
-    (None, "None"),
+    #("H","do(H)=U(H)"),
+    ("H", "do(H)=N(70,10)"),
+    ("H", "do(H)=SBeta(2,2)"),
+    ("H", "do(H)=Gamma(2,10)"),
+    ("H", "do(H)=[25,75]"),
+    ("H", "do(H)=50"),
+    #(None, "None"),
     # ("H","do(H)=U(H)"),
     # ("M","do(M)=U(M)"),
     # ("A","do(A)=U(A)"),
@@ -130,7 +186,7 @@ for interv in interventions:
 
         # create a dataset
         scm = SCM_Health(discrete=False, domains=domains)
-        scm.do(interv)
+        scm.do(interv_desc)
         data = scm.create_data_sample(N, domains=True)
         for ind_d, d in enumerate(['Age','Food Habits','Health','Mobility']):
             e = d[0]

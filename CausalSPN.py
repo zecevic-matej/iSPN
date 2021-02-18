@@ -207,8 +207,8 @@ Load pre-computed Models and CausalSPN Approximations
 '''
 models = {
     'p(A,F,H,M)': 'models/probability_table_spn_causal_toy_dataset_softened.csv',#'models/probability_table_spn_causal_toy_dataset.csv',
-    'p(F|A)': 'models/probability_table_cspn_causal_toy_dataset_p(F_given_A).csv',
-    'p(M|H)': 'models/probability_table_cspn_causal_toy_dataset_p(M_given_H).csv',
+    'p(F|A)': 'models/probability_table_cspn_causal_toy_dataset_p(F_given_A)_CategoricalCSPN.csv',
+    'p(M|H)': 'models/probability_table_cspn_causal_toy_dataset_p(M_given_H)_CategoricalCSPN.csv',
     'p(A,F,M|do(H=U(H))': 'models/probability_table_spn_causal_toy_dataset_soft_intervention_Health.csv'
 }
 
@@ -221,6 +221,9 @@ Compare different Distributions (Inference)
 '''
 
 causal_spn = CausalSPN(models=models, data_obs=data_obs, approximations=approximations)
+
+# remove key to force re-computation
+del causal_spn.approximations['p(A,F,M|do(H=U(H))']
 
 jsd_obs_vs_obs = jensenshannon(causal_spn.models['p(A,F,H,M)']['p'], causal_spn.models['p(A,F,H,M)']['p'], base=2)
 print('Jensen-Shannon-Divergence Obs vs. Obs : {}\n'.format(jsd_obs_vs_obs))

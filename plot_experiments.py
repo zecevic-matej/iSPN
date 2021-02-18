@@ -129,13 +129,30 @@ for i in interventions["CH"]:
 
 # plot all of it
 show_n_vars = 4
-show_n_interv = 2
-fig, axs = plt.subplots(4,int(show_n_vars*show_n_interv),figsize=(13,8)) # 4 datasets x 4 variables * 2 interventions
-for ind_dn, dn in enumerate(dataset_names):
+show_n_interv = 4
+fig, axs = plt.subplots(4,int(show_n_vars*show_n_interv),figsize=(13,9)) # 4 datasets x 4 variables * 2 interventions
+general_bar_width = 0.2
+centering_offset = general_bar_width
+plot_with_info = False
+plot_compact = True
+ordering = [3,1,0,2] # reordering dataset by liking
+specific_variables = {
+    'asia': ['xray','tub', 'lung','either'],
+    'earthquake': ['Burglary', 'Earthquake', 'Alarm', 'MaryCalls'],
+    'cancer': ['Smoker', 'Pollution', 'Cancer', 'Xray'],
+                      }
+if specific_variables:
+    for dn in dataset_names:
+        if dn in specific_variables.keys():
+            assert(len(specific_variables[dn]) == show_n_vars)
+for ind_dn, dn in enumerate([dataset_names[i] for i in ordering]):
+    print(f'Plotting for {dn} the Interventions {interventions[dn][:show_n_interv]} using Variables {variables[dn][:show_n_vars]} (not showing specific variables)')
     for ind_i, i in enumerate(interventions[dn][:show_n_interv]):
         for ind_v, v in enumerate(variables[dn][:show_n_vars]):
             a_y = ind_dn
             a_x = ind_i*show_n_vars+ind_v
+            if specific_variables and dn in specific_variables.keys():
+                v = specific_variables[dn][ind_v]
 
             # Ground Truth
             if v not in gt_dict[dn][str(i)].keys():  # for the CH case
@@ -144,7 +161,12 @@ for ind_dn, dn in enumerate(dataset_names):
                 v_alt = v
             hist_data = gt_dict[dn][str(i)][v_alt]
             weights = np.ones_like(hist_data) / len(hist_data)
-            axs[a_y, a_x].hist(hist_data, label="GT", weights=weights)
+            if dn == 'CH':
+                gt_hist = axs[a_y, a_x].hist(hist_data, label="GT", weights=weights, color='black')
+            else:
+                h_bins = [0., 0.5, 1.]
+                h, e = np.histogram(hist_data, bins=h_bins, weights=weights)
+                axs[a_y, a_x].bar(np.array([0.,1.])+general_bar_width-centering_offset, h, width=general_bar_width, color='black', linewidth=0)
 
             # iSPN
             vals_x = iSPN_data[dn][606][i][v][0]
@@ -159,33 +181,104 @@ for ind_dn, dn in enumerate(dataset_names):
 
             # MDN
             height = MDN_data[dn][606][i][v][1]
-            pos = MDN_data[dn][606][i][v][0]
-            pos_diff = pos[1]-pos[0]
-            pos = np.array([pos[0]+i*pos_diff for i in range(len(height))])
-            if dn != "CH":
-                pos += 0.1
-            axs[a_y, a_x].bar(x=pos, height=height, color="green", alpha=0.5, width=0.1)
+            if dn == 'CH':
+                pos = MDN_data[dn][606][i][v][0]
+                pos_diff = pos[1]-pos[0]
+                axs[a_y, a_x].bar(x=pos, height=height, color="#65cc1b", alpha=0.5, width=pos_diff, linewidth=0)
+            else:
+                axs[a_y, a_x].bar(x=np.array([0.,1.])-centering_offset, height=height, color="#65cc1b", alpha=0.5, width=general_bar_width, linewidth=0)
 
             # MADE
             height = MADE_data[dn][606][i][v][1]
-            pos = normalize(MADE_data[dn][606][i][v][0], a=-0.2, b=1, low=-20, high=100)
-            pos_diff = pos[1]-pos[0]
-            pos = np.array([pos[0]+i*pos_diff for i in range(len(height))])
-            if dn != "CH":
-                pos += 0.2
-            axs[a_y, a_x].bar(x=pos, height=height, color="red", alpha=0.5, width=0.1)
+            if dn == 'CH':
+                pos = normalize(MADE_data[dn][606][i][v][0], a=-0.2, b=1, low=-20, high=100)
+                pos_diff = pos[1]-pos[0]
+                axs[a_y, a_x].bar(x=pos, height=height, color="#821bcc", alpha=0.5, width=pos_diff, linewidth=0)
+            else:
+                axs[a_y, a_x].bar(x=np.array([0.,1.])+2*general_bar_width-centering_offset, height=height, color="#821bcc", alpha=0.5, width=general_bar_width, linewidth=0)
 
             # turn of axes
             if dn == "CH":
                 axs[a_y, a_x].set_xlim(0,1)
-            axs[a_y, a_x].set_ylim(bottom=0)
-            axs[a_y, a_x].axes.xaxis.set_ticklabels([])
-            axs[a_y, a_x].axes.yaxis.set_ticklabels([])
-            #axs[a_y, a_x].set_title(f"V:{v},I:{i},D:{dn}", fontsize=5)
-
-plt.tight_layout()
+                axs[a_y, a_x].set_ylim(0,0.4)
+            else:
+                axs[a_y, a_x].set_xlim(-0.5,1.5)
+                axs[a_y, a_x].set_ylim(0,1.3)
+            #axs[a_y, a_x].set_ylim(bottom=0)
+            if plot_with_info:
+                axs[a_y, a_x].set_title(f"V:{v},I:{i},D:{dn}", fontsize=5)
+            else:
+                axs[a_y, a_x].axes.xaxis.set_ticklabels([])
+                axs[a_y, a_x].axes.yaxis.set_ticklabels([])
+if not plot_with_info and plot_compact:
+    plt.subplots_adjust(wspace=0, hspace=0)
+else:
+    plt.tight_layout()
 plt.show()
 plt.close()
 plt.clf()
 
+############################
+# validation for plots
 
+# # MADE
+# fig, axs = plt.subplots(1,4,figsize=(13,9))
+# dn = 'CH'
+# i = 'None'
+# for ind, v in enumerate(variables[dn]):
+#     a_x = ind
+#     height = MADE_data[dn][606][i][v][1]
+#     pos = normalize(MADE_data[dn][606][i][v][0], a=-0.2, b=1, low=-20, high=100)
+#     pos_diff = pos[1] - pos[0]
+#     #pos = np.array([pos[0] + i * pos_diff for i in range(len(height))])
+#     if dn != "CH":
+#         pos += 0.3
+#     axs[a_x].bar(x=pos, height=height, color="red", alpha=0.5, width=pos_diff)
+#     axs[a_x].set_xlim(-0.2,1)
+#     axs[a_x].set_ylim(0.,0.4)
+# plt.show()
+# plt.close()
+# plt.clf()
+
+# # MDN
+# fig, axs = plt.subplots(1,4,figsize=(13,9))
+# dn = 'CH'
+# i = 'None'
+# for ind, v in enumerate(variables[dn]):
+#     a_x = ind
+#     height = MDN_data[dn][606][i][v][1]
+#     pos = MDN_data[dn][606][i][v][0]
+#     pos_diff = pos[1] - pos[0]
+#     #pos = np.array([pos[0] + i * pos_diff for i in range(len(height))])
+#     if dn != "CH":
+#         pos += 0.3
+#     axs[a_x].bar(x=pos, height=height, color="red", alpha=0.5, width=pos_diff)
+#     axs[a_x].set_xlim(-0.2,1)
+#     axs[a_x].set_ylim(0.,0.4)
+# plt.show()
+# plt.close()
+# plt.clf()
+
+# # GT
+# n = 4
+# fig, axs = plt.subplots(1,n,figsize=(13,9))
+# dn = 'asia'
+# i = 'None'
+# for ind, v in enumerate(variables[dn][:n]):
+#     a_x = ind
+#     if v not in gt_dict[dn][str(i)].keys():  # for the CH case
+#         v_alt = v[0]
+#     else:
+#         v_alt = v
+#     hist_data = gt_dict[dn][str(i)][v_alt]
+#     # weights = np.ones_like(hist_data) / len(hist_data)
+#     # gt_hist = axs[a_x].hist(hist_data, label="GT", weights=weights, color='black')
+#     h_bins = [0.,0.5,1.]
+#     weights = np.ones_like(hist_data) / len(hist_data)
+#     h, e = np.histogram(hist_data, bins=h_bins, weights=weights)
+#     axs[a_x].bar(range(len(h_bins) - 1), h, width=0.1, edgecolor='k')
+#     #axs[a_x].set_xlim(-0.2,1)
+#     #axs[a_x].set_ylim(0.,0.4)
+# plt.show()
+# plt.close()
+# plt.clf()
