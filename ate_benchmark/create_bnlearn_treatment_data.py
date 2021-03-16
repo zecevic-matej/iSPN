@@ -8,11 +8,11 @@ sns.set_theme()
 
 # general parameters
 # check out https://www.bnlearn.com/bnrepository/discrete-small.html#asia
-bif_file = 'earthquake.bif' #'asia.bif' # available are: earthquake, cancer, sachs, survey
+bif_file = 'asia.bif' # available are: earthquake, cancer, sachs, survey
 visualize_immediate = False
 visualize_final = True
 N = 100000
-interventions = ['Burglary'] #["asia",'bronc']
+interventions = ["asia",'bronc']
 save_dir = './data/'
 
 # load model
