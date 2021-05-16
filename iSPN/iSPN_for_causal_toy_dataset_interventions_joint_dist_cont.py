@@ -12,6 +12,7 @@ import seaborn as sns
 sns.set_theme()
 np.set_printoptions(suppress=True)
 import gc
+import random
 
 def get_graph_for_intervention_CHD(intervention):
     """
@@ -110,7 +111,7 @@ class CausalHealthDataset():
 
 class BnLearnDataset():
     def __init__(self, bif, batch_size, description, whitelist):
-        p = '../datasets/other/benchmark_data_for_uniform_interventions/{}_uniform_interventions_N10000.pkl'.format(bif)
+        p = '../datasets/other/benchmark_data_for_uniform_interventions/{}_uniform_interventions_N100000.pkl'.format(bif)
         with open(p, "rb") as f:
             data = pickle.load(f)
         lut_interventions = {}
@@ -164,21 +165,35 @@ with tf.device('/GPU:0'):
         #################################################################
 
         # parameters to be adapted
-        conf.num_epochs = 50#70 #130 # Causal Health: 130
-        conf.batch_size = 1000 # Causal Health: 1000
-        num_sum_weights = 600 # Causal Health: 600
-        num_leaf_weights = 12 # Causal Health: 12
-        use_simple_mlp = True # Causal Health: True
-        bnl_dataset = None # Causal Health: None
-        whitelist = None #[None, "lung"]  # only BNL datasetes: all interventions to be considered, if None then everything is considered
-        dataset_name = bnl_dataset if bnl_dataset else f'CH_{extra_dsc}' # adapt for other datasets
-        description = 'Causal Health (Cont.)' # Causal Health: 'Causal Health (Cont.)'
-        dataset = CausalHealthDataset(conf.batch_size, extra=extra) # CausalHealthDataset(conf.batch_size)
+        # conf.num_epochs = 5#70 #130 # Causal Health: 130
+        # conf.batch_size = 1000 # Causal Health: 1000
+        # num_sum_weights = 600 # Causal Health: 600
+        # num_leaf_weights = 12 # Causal Health: 12
+        # use_simple_mlp = True # Causal Health: True
+        # bnl_dataset = None # Causal Health: None
+        # whitelist = None #[None, "lung"]  # only BNL datasetes: all interventions to be considered, if None then everything is considered
+        # dataset_name = bnl_dataset if bnl_dataset else f'CH_{extra_dsc}' # adapt for other datasets
+        # description = 'Causal Health (Cont.)' # Causal Health: 'Causal Health (Cont.)'
+        # dataset = CausalHealthDataset(conf.batch_size, extra=extra) # CausalHealthDataset(conf.batch_size)
+        # # low, high are the sample range for getting the Probability Density Function (pdf)
+        # low=-20 # Causal Health: -20
+        # high=100 # Causal Health: 100
 
-        # low, high are the sample range for getting the Probability Density Function (pdf)
-        low=-20 # Causal Health: -20
-        high=100 # Causal Health: 100
-        save_dir=f"appendix_ablation/iSPN_trained_uniform_interventions_{dataset_name}_ep{conf.num_epochs}/" # if not specified, then plots are plotted instead of saved
+        conf.num_epochs = 50
+        conf.batch_size = 100
+        num_sum_weights = 500#600#2400
+        num_leaf_weights = 24#32#96
+        use_simple_mlp = True
+        bnl_dataset = 'asia'
+        whitelist = None
+        dataset_name = bnl_dataset
+        description = '{} (bnlearn, Bernoulli)'.format(bnl_dataset)
+        dataset = BnLearnDataset(bnl_dataset, conf.batch_size, description, whitelist)
+        suffix = "_100k"
+        low=-0.5
+        high=1.5
+
+        save_dir=f"runtimes/timed_iSPN_trained_uniform_interventions_{dataset_name}_ep{conf.num_epochs}{suffix}/" # if not specified, then plots are plotted instead of saved
 
         plot_loss_curve = False
         plot_mpe = False
@@ -201,6 +216,8 @@ with tf.device('/GPU:0'):
 
                 np.random.seed(cur_seed)
                 tf.set_random_seed(cur_seed)
+                tf.random.set_random_seed(cur_seed)
+                random.seed(cur_seed)
 
                 x_dims = dataset.train_x.shape[1]
                 y_dims = dataset.train_y.shape[1]
@@ -223,16 +240,20 @@ with tf.device('/GPU:0'):
                 args = RAT_SPN.SpnArgs()
                 args.normalized_sums = True
                 args.param_provider = param_provider
-                args.num_sums = 4
-                args.num_gauss = 4
+                args.num_sums = 2#4
+                args.num_gauss = 2#4
                 args.dist = 'Gauss'
                 spn = RAT_SPN.RatSpn(num_classes=1, region_graph=rg, name="spn", args=args)
                 print("TOTAL", spn.num_params())
 
+                import time
+                t0 = time.time()
                 sess = tf.Session(config=tf.ConfigProto(
                     allow_soft_placement=True, log_device_placement=False))
                 trainer = CspnTrainer(spn, dataset, x_ph, train_ph, conf, sess=sess)
                 loss_curve = trainer.run_training(no_save=True)
+                training_time = time.time() - t0
+                print(f'TIME {training_time:.2f}')
 
                 # test performance on test set, unseen data
                 x_batch = dataset.test_x[: conf.batch_size]
@@ -339,12 +360,23 @@ with tf.device('/GPU:0'):
                         vals_x, vals_pdf = compute_pdf(list_vars_per_interv[ind].index(d), N, low, high, intervention=interv_desc,visualize=False)
                         vals_per_var.update({d: (vals_x, vals_pdf)})
                     vals_per_intervention.update({interv_desc: vals_per_var})
-                vals_per_seed.update({cur_seed: vals_per_intervention})
+                vals_per_seed.update({cur_seed: (vals_per_intervention, training_time) })
 
                 loss_curves_per_seed.append(loss_curve)
 
                 # clear the session, to re-run
                 tf.reset_default_graph()
+
+                if save_dir:
+                    if not os.path.exists(save_dir):
+                        os.makedirs(save_dir)
+                    save_loc = os.path.join(save_dir, "runtimes.txt")
+                    if os.path.exists(save_loc):
+                        m = "a"
+                    else:
+                        m = "w"
+                    with open(save_loc, m) as f:
+                        f.write(f"{training_time:.2f}\n")
 
 
             vals_per_seed.update({"loss curve": (np.mean(loss_curves_per_seed, axis=0), np.std(loss_curves_per_seed, axis=0))})
@@ -375,10 +407,10 @@ with tf.device('/GPU:0'):
         mean_vals_per_interv = {}
         for ind, interv_desc in enumerate(dataset.intervention):
             mean_vals_per_var = {}
-            for v in vals_per_seed[master_seeds[0]][interv_desc].keys():
+            for v in vals_per_seed[master_seeds[0]][0][interv_desc].keys():
                 vals_pdfs = []
                 for seed in master_seeds:
-                    vals_pdf = vals_per_seed[seed][interv_desc][v][1][:,0]
+                    vals_pdf = vals_per_seed[seed][0][interv_desc][v][1][:,0]
                     vals_pdfs.append(vals_pdf)
                 vals_pdfs = np.stack(vals_pdfs)
                 mean_vals_per_var.update({v: (np.mean(vals_pdfs, axis=0), np.std(vals_pdfs, axis=0))})
